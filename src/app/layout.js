@@ -1,13 +1,15 @@
-import { Geist, Geist_Mono } from "next/font/google";
+import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+// Inter sebagai pengganti Geist Sans
+const inter = Inter({
+  variable: "--font-geist-sans", // Variabel tetap sama supaya CSS kamu tidak rusak
   subsets: ["latin"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+// JetBrains Mono sebagai pengganti Geist Mono
+const jetbrainsMono = JetBrains_Mono({
+  variable: "--font-geist-mono", // Variabel tetap sama supaya CSS kamu tidak rusak
   subsets: ["latin"],
 });
 
@@ -20,7 +22,7 @@ export default function RootLayout({ children }) {
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${inter.variable} ${jetbrainsMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">{children}</body>
     </html>

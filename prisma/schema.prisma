@@ -1,13 +1,115 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
+// prisma/schema.prisma
+// Schema Database untuk Aplikasi Realtime Chat
 
 generator client {
-  provider = "prisma-client"
-  output   = "../src/generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// MODEL USER
+// Menyimpan data pengguna yang terdaftar
+// ============================================================
+model User {
+  id        String   @id @default(cuid())
+  username  String   @unique
+  email     String   @unique
+  password  String   // sudah di-hash dengan bcrypt
+  avatar    String?  // URL avatar (opsional)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Status online/offline
+  isOnline  Boolean  @default(false)
+  lastSeen  DateTime @default(now())
+
+  // Relasi ke pesan yang dikirim
+  sentMessages    Message[]
+
+  // Relasi ke room yang dibuat
+  createdRooms    Room[]   @relation("RoomCreator")
+
+  // Relasi many-to-many dengan Room (member)
+  rooms           RoomMember[]
+
+  @@map("users")
+}
+
+// ============================================================
+// MODEL ROOM
+// Menyimpan data ruang chat (room)
+// ============================================================
+model Room {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  isPrivate   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relasi ke creator (User)
+  creatorId   String
+  creator     User     @relation("RoomCreator", fields: [creatorId], references: [id])
+
+  // Relasi ke member room
+  members     RoomMember[]
+
+  // Relasi ke pesan dalam room
+  messages    Message[]
+
+  @@map("rooms")
+}
+
+// ============================================================
+// MODEL ROOM MEMBER (Many-to-Many User <-> Room)
+// Menyimpan relasi user dan room beserta status join
+// ============================================================
+model RoomMember {
+  id       String   @id @default(cuid())
+  joinedAt DateTime @default(now())
+
+  userId   String
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  roomId   String
+  room     Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roomId])
+  @@map("room_members")
+}
+
+// ============================================================
+// MODEL MESSAGE
+// Menyimpan pesan chat
+// ============================================================
+model Message {
+  id        String      @id @default(cuid())
+  content   String
+  type      MessageType @default(TEXT)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  isDeleted Boolean     @default(false)
+
+  // Relasi ke pengirim (User)
+  senderId  String
+  sender    User         @relation(fields: [senderId], references: [id])
+
+  // Relasi ke room
+  roomId    String
+  room      Room         @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@map("messages")
+}
+
+// ============================================================
+// ENUM TIPE PESAN
+// ============================================================
+enum MessageType {
+  TEXT
+  IMAGE
+  SYSTEM // pesan otomatis (contoh: "User bergabung")
 }
