@@ -23,12 +23,14 @@ export default function ProfilePage() {
     setUser(u);
     setUsername(u.username);
 
-    // Fetch fresh data
-    fetchWithAuth("/api/profile").then(r=>r.json()).then(d => {
-      if (d.user) { setUser(d.user); setUsername(d.user.username); saveAuth(localStorage.getItem("token"), d.user); }
+    fetchWithAuth("/api/profile").then(r => r.json()).then(d => {
+      if (d.user) {
+        setUser(d.user);
+        setUsername(d.user.username);
+        saveAuth(localStorage.getItem("token"), d.user);
+      }
     });
 
-    // Check push subscription status
     if ("serviceWorker" in navigator && "PushManager" in window) {
       navigator.serviceWorker.ready.then(async reg => {
         const sub = await reg.pushManager.getSubscription();
@@ -40,12 +42,11 @@ export default function ProfilePage() {
     socketRef.current = socket;
   }, []);
 
-  // Handle drag & drop avatar (Web platform-specific feature)
   function handleDrop(e) {
     e.preventDefault();
     setDragOver(false);
     const file = e.dataTransfer.files[0];
-    if (!file?.type.startsWith("image/")) { setMsg("File harus berupa gambar!"); return; }
+    if (!file?.type.startsWith("image/")) { setMsg("❌ File harus berupa gambar!"); return; }
     processImageFile(file);
   }
 
@@ -55,17 +56,15 @@ export default function ProfilePage() {
   }
 
   function processImageFile(file) {
-    if (file.size > 2 * 1024 * 1024) { setMsg("File terlalu besar (maks 2MB)"); return; }
+    if (file.size > 2 * 1024 * 1024) { setMsg("❌ File terlalu besar (maks 2MB)"); return; }
     const reader = new FileReader();
-    reader.onload = (e) => {
-      const base64 = e.target.result;
-      uploadAvatar(base64);
-    };
+    reader.onload = (e) => uploadAvatar(e.target.result);
     reader.readAsDataURL(file);
   }
 
   async function uploadAvatar(base64) {
     setSaving(true);
+    setMsg("⏳ Mengupload avatar...");
     const res = await fetchWithAuth("/api/profile", { method:"PATCH", body: JSON.stringify({ avatar: base64 }) });
     const data = await res.json();
     if (data.user) {
@@ -93,7 +92,6 @@ export default function ProfilePage() {
     setTimeout(() => setMsg(""), 3000);
   }
 
-  // Web Push (Web platform-specific feature)
   async function togglePush() {
     setPushLoading(true);
     if (pushEnabled) {
@@ -102,6 +100,8 @@ export default function ProfilePage() {
       if (sub) await sub.unsubscribe();
       setPushEnabled(false);
       setPushLoading(false);
+      setMsg("🔕 Push notification dinonaktifkan");
+      setTimeout(() => setMsg(""), 3000);
       return;
     }
     try {
@@ -152,42 +152,60 @@ export default function ProfilePage() {
         <button onClick={logout} style={{ background:"none", border:"none", color:"#888", fontWeight:"700", fontSize:"13px", cursor:"pointer" }}>Keluar</button>
       </nav>
 
-      {msg && <div style={{ background: msg.startsWith("✅")?"#e8f5e9":"#fde8e8", color: msg.startsWith("✅")?"#2e7d32":"#c62828", padding:"10px 24px", fontSize:"13px", fontWeight:"600", textAlign:"center" }}>{msg}</div>}
+      {msg && (
+        <div style={{ background: msg.startsWith("✅")?"#e8f5e9": msg.startsWith("⏳")?"#f5f5f5":"#fde8e8", color: msg.startsWith("✅")?"#2e7d32": msg.startsWith("⏳")?"#888":"#c62828", padding:"10px 24px", fontSize:"13px", fontWeight:"600", textAlign:"center" }}>
+          {msg}
+        </div>
+      )}
 
       <div style={{ padding:"24px 20px", maxWidth:"500px", margin:"0 auto" }}>
-        {/* Avatar */}
-        <div style={{ textAlign:"center", marginBottom:"24px" }}>
-          {/* Drag & Drop area (Web-specific feature) */}
+
+        {/* Drag & Drop Avatar — Platform-specific Web feature */}
+        <div style={{ marginBottom:"24px" }}>
           <div
             onDragOver={e => { e.preventDefault(); setDragOver(true); }}
             onDragLeave={() => setDragOver(false)}
             onDrop={handleDrop}
             onClick={() => fileInputRef.current?.click()}
-            style={{ width:"100px", height:"100px", borderRadius:"50%", margin:"0 auto 12px", border: dragOver?"3px dashed #8B2635":"3px solid #e0d0d0", background: dragOver?"#fde8e8":"#f5efef", display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", transition:"all 0.2s", overflow:"hidden", position:"relative" }}>
+            style={{
+              width:"100%",
+              minHeight:"160px",
+              borderRadius:"16px",
+              border: dragOver ? "3px dashed #8B2635" : "2px dashed #d0c8c8",
+              background: dragOver ? "#fde8e8" : "#f9f5f5",
+              display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center",
+              cursor:"pointer", transition:"all 0.2s", gap:"10px", padding:"20px"
+            }}>
             {user?.avatar ? (
-              <img src={user.avatar} style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+              <>
+                <img src={user.avatar} style={{ width:"80px", height:"80px", borderRadius:"50%", objectFit:"cover", border:"3px solid #e0d0d0" }} />
+                <span style={{ fontSize:"13px", color:"#888", fontWeight:"600" }}>🖱️ Drag foto baru atau klik untuk ganti</span>
+              </>
             ) : (
-              <span style={{ fontSize:"40px" }}>🧑</span>
+              <>
+                <span style={{ fontSize:"40px" }}>📷</span>
+                <span style={{ fontSize:"14px", fontWeight:"700", color:"#8B2635" }}>Drag & Drop foto di sini</span>
+                <span style={{ fontSize:"12px", color:"#aaa" }}>atau klik untuk pilih dari file</span>
+                <span style={{ fontSize:"10px", color:"#bbb" }}>JPG, PNG, GIF — maks 2MB</span>
+              </>
             )}
-            <div style={{ position:"absolute", inset:0, background:"rgba(0,0,0,0.3)", display:"flex", alignItems:"center", justifyContent:"center", opacity:0, transition:"opacity 0.2s" }}
-              onMouseEnter={e=>e.currentTarget.style.opacity=1} onMouseLeave={e=>e.currentTarget.style.opacity=0}>
-              <span style={{ color:"#fff", fontSize:"11px", fontWeight:"700" }}>📷 Ubah</span>
-            </div>
           </div>
           <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileChange} style={{ display:"none" }} />
-          <p style={{ fontSize:"11px", color:"#888", marginBottom:"4px" }}>🖱️ Drag & drop gambar atau klik untuk upload</p>
-          <p style={{ fontSize:"10px", color:"#bbb" }}>Platform-specific feature: Drag & Drop</p>
+          <p style={{ fontSize:"10px", color:"#bbb", textAlign:"center", marginTop:"6px" }}>🌐 Web Platform Feature: Drag & Drop File API</p>
         </div>
 
         {/* Profile Card */}
         <div style={{ background:"#fff", borderRadius:"20px", padding:"24px", boxShadow:"0 2px 16px rgba(0,0,0,0.05)", marginBottom:"16px" }}>
           {editing ? (
             <div style={{ display:"flex", gap:"10px", marginBottom:"16px" }}>
-              <input value={username} onChange={e=>setUsername(e.target.value)} style={{ flex:1, padding:"10px 14px", borderRadius:"10px", border:"1.5px solid #e0d8d8", fontSize:"15px", fontWeight:"600", outline:"none" }} />
-              <button onClick={saveProfile} disabled={saving} style={{ padding:"10px 16px", borderRadius:"10px", border:"none", background:"#8B2635", color:"#fff", fontWeight:"700", fontSize:"13px" }}>
-                {saving?"...":"Simpan"}
+              <input value={username} onChange={e => setUsername(e.target.value)}
+                style={{ flex:1, padding:"10px 14px", borderRadius:"10px", border:"1.5px solid #e0d8d8", fontSize:"15px", fontWeight:"600", outline:"none" }} />
+              <button onClick={saveProfile} disabled={saving}
+                style={{ padding:"10px 16px", borderRadius:"10px", border:"none", background:"#8B2635", color:"#fff", fontWeight:"700", fontSize:"13px" }}>
+                {saving ? "..." : "Simpan"}
               </button>
-              <button onClick={() => { setEditing(false); setUsername(user.username); }} style={{ padding:"10px 16px", borderRadius:"10px", border:"none", background:"#f0e8e8", color:"#888", fontWeight:"700", fontSize:"13px" }}>
+              <button onClick={() => { setEditing(false); setUsername(user.username); }}
+                style={{ padding:"10px 16px", borderRadius:"10px", border:"none", background:"#f0e8e8", color:"#888", fontWeight:"700", fontSize:"13px" }}>
                 Batal
               </button>
             </div>
@@ -197,11 +215,13 @@ export default function ProfilePage() {
                 <h2 style={{ fontSize:"20px", fontWeight:"800", color:"#1a1a1a" }}>{user?.username}</h2>
                 <p style={{ fontSize:"13px", color:"#888" }}>{user?.email}</p>
               </div>
-              <button onClick={() => setEditing(true)} style={{ padding:"8px 16px", borderRadius:"20px", border:"1.5px solid #e0d0d0", background:"transparent", color:"#888", fontWeight:"700", fontSize:"12px", cursor:"pointer" }}>Edit</button>
+              <button onClick={() => setEditing(true)}
+                style={{ padding:"8px 16px", borderRadius:"20px", border:"1.5px solid #e0d0d0", background:"transparent", color:"#888", fontWeight:"700", fontSize:"12px", cursor:"pointer" }}>
+                Edit
+              </button>
             </div>
           )}
 
-          {/* Stats */}
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:"12px" }}>
             {[
               { label:"POIN", value: user?.rankedPoints || 1000, color:"#8B2635" },
@@ -216,30 +236,30 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        {/* Web Push Toggle */}
+        {/* Web Push Toggle — Platform-specific Web feature */}
         {"serviceWorker" in (typeof navigator !== "undefined" ? navigator : {}) && (
           <div style={{ background:"#fff", borderRadius:"20px", padding:"20px 24px", boxShadow:"0 2px 16px rgba(0,0,0,0.05)", marginBottom:"16px" }}>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
               <div>
                 <div style={{ fontWeight:"700", fontSize:"14px", color:"#1a1a1a", marginBottom:"2px" }}>🔔 Web Push Notification</div>
                 <div style={{ fontSize:"11px", color:"#888" }}>Terima notifikasi challenge dari pemain lain</div>
-                <div style={{ fontSize:"10px", color:"#bbb", marginTop:"2px" }}>Platform-specific: Web Push API</div>
+                <div style={{ fontSize:"10px", color:"#bbb", marginTop:"2px" }}>🌐 Web Platform Feature: Web Push API</div>
               </div>
               <button onClick={togglePush} disabled={pushLoading}
-                style={{ padding:"8px 18px", borderRadius:"20px", border:"none", background: pushEnabled?"#4CAF7D":"#8B2635", color:"#fff", fontWeight:"700", fontSize:"12px", cursor:"pointer", opacity: pushLoading?0.7:1 }}>
-                {pushLoading?"..." : pushEnabled ? "✅ Aktif" : "Aktifkan"}
+                style={{ padding:"8px 18px", borderRadius:"20px", border:"none", background: pushEnabled?"#4CAF7D":"#8B2635", color:"#fff", fontWeight:"700", fontSize:"12px", cursor:"pointer", opacity: pushLoading?0.7:1, flexShrink:0, marginLeft:"12px" }}>
+                {pushLoading ? "⏳" : pushEnabled ? "✅ Aktif" : "Aktifkan"}
               </button>
             </div>
           </div>
         )}
 
-        {/* Joined date */}
+        {/* Info */}
         <div style={{ background:"#fff", borderRadius:"20px", padding:"20px 24px", boxShadow:"0 2px 16px rgba(0,0,0,0.05)" }}>
           <div style={{ fontSize:"12px", color:"#aaa", fontWeight:"600" }}>
             Bergabung sejak {user?.createdAt ? new Date(user.createdAt).toLocaleDateString("id-ID", { year:"numeric", month:"long", day:"numeric" }) : "-"}
           </div>
           <div style={{ fontSize:"12px", color:"#aaa", fontWeight:"600", marginTop:"4px" }}>
-            Total kalah: {user?.losses || 0}
+            Total kalah: {user?.losses || 0} game
           </div>
         </div>
       </div>
@@ -247,7 +267,8 @@ export default function ProfilePage() {
       {/* Bottom Nav */}
       <div style={{ position:"fixed", bottom:"0", left:"0", right:"0", background:"#fff", borderTop:"1px solid var(--border)", display:"flex", padding:"12px 0 20px" }}>
         {navItems.map(item => (
-          <button key={item.label} onClick={() => router.push(item.path)} style={{ flex:1, background:item.active?"#8B2635":"transparent", border:"none", borderRadius:item.active?"50px":"0", padding:"10px 16px", cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", gap:"4px", margin:item.active?"0 8px":"0" }}>
+          <button key={item.label} onClick={() => router.push(item.path)}
+            style={{ flex:1, background:item.active?"#8B2635":"transparent", border:"none", borderRadius:item.active?"50px":"0", padding:"10px 16px", cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", gap:"4px", margin:item.active?"0 8px":"0" }}>
             <span style={{ fontSize:"18px" }}>{item.icon}</span>
             <span style={{ fontSize:"11px", fontWeight:"700", color:item.active?"#fff":"#888" }}>{item.label}</span>
           </button>

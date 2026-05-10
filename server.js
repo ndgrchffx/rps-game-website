@@ -86,10 +86,10 @@ async function fetchTrivia() {
   }
 }
 
-function calcDamage(result, attackerBuffs = []) {
+function calcDamage(attackerBuffs = [], defenderBuffs = []) {
   let base = 20;
   if (attackerBuffs.includes("double_damage")) base = 40;
-  if (attackerBuffs.includes("half_damage")) base = 10;
+  if (defenderBuffs.includes("half_damage")) base = Math.floor(base / 2);
   return base;
 }
 
@@ -233,7 +233,7 @@ app.prepare().then(() => {
     const state = createGameState(session.id, roomCode, "CASUAL", { id: userId, username });
     gameRooms.set(roomCode, state);
     socket.join(roomCode);
-    socket.emit("game:room_created", { roomCode, sessionId: session.id });
+    socket.emit("game:room_created", { roomCode, sessionId: session.id, state: sanitizeState(state) });
   } catch (e) {
     socket.emit("error", { message: "Gagal membuat room." });
   }
@@ -552,22 +552,22 @@ app.prepare().then(() => {
     let damageToPl2 = 0;
 
     if (result === "P1_WIN") {
-      damageToPl2 = calcDamage(result, p1.buffs);
-      if (!p2.buffs.includes("shield")) p2.hp -= damageToPl2;
-      else damageToPl2 = 0;
-    } else if (result === "P2_WIN") {
-      damageToPl1 = calcDamage(result, p2.buffs);
-      if (!p1.buffs.includes("shield")) p1.hp -= damageToPl1;
-      else damageToPl1 = 0;
-    }
+    damageToPl2 = calcDamage(p1.buffs, p2.buffs);
+    if (!p2.buffs.includes("shield")) p2.hp -= damageToPl2;
+    else damageToPl2 = 0;
+  } else if (result === "P2_WIN") {
+    damageToPl1 = calcDamage(p2.buffs, p1.buffs);
+    if (!p1.buffs.includes("shield")) p1.hp -= damageToPl1;
+    else damageToPl1 = 0;
+  }
 
     p1.hp = Math.max(0, p1.hp);
     p2.hp = Math.max(0, p2.hp);
 
     // Clear one-time buffs after round
-    const oneTimeBuff = ["shield", "double_damage", "half_damage", "spy", "extra_time", "time_cut", "lock_random", "reveal"];
-    p1.buffs = p1.buffs.filter(b => !oneTimeBuff.includes(b));
-    p2.buffs = p2.buffs.filter(b => !oneTimeBuff.includes(b));
+    // Clear semua buff setelah setiap ronde
+    p1.buffs = [];
+    p2.buffs = [];
 
     // Save round to DB
     try {

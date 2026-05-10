@@ -12,25 +12,37 @@ function GameContent() {
   const params = useSearchParams();
   const roomCode = params.get("room");
   const [user, setUser] = useState(null);
+  const [amIP1, setAmIP1] = useState(null); // null=belum tahu, true/false setelah init
   const [gameState, setGameState] = useState({
-    phase: "waiting", // waiting | picking | reveal | trivia | result | gameover
+    phase: "waiting",
     round: 0,
     timer: 5,
-    p1: { username:"", hp:100, buffs:[] },
-    p2: { username:"", hp:100, buffs:[] },
+    p1: { id:"", username:"", hp:100, buffs:[] },
+    p2: { id:"", username:"", hp:100, buffs:[] },
     myMove: null,
     opponentPicked: false,
     lockedMove: null,
   });
-  const [trivia, setTrivia] = useState(null); // { question, options, timeLimit, myAnswer }
+  const [trivia, setTrivia] = useState(null);
   const [roundResult, setRoundResult] = useState(null);
   const [gameOver, setGameOver] = useState(null);
-  const [effects, setEffects] = useState([]); // screen effects
+  const [effects, setEffects] = useState([]);
   const [myId, setMyId] = useState(null);
-  const [spyHint, setSpyHint] = useState(null); // move yang TIDAK dipilih lawan
-  const [opponentExposed, setOpponentExposed] = useState(null); // move lawan yg terexpose
+  const [spyHint, setSpyHint] = useState(null);
+  const [opponentExposed, setOpponentExposed] = useState(null);
   const socketRef = useRef(null);
   const timerRef = useRef(null);
+
+  function initState(state, currentUser) {
+    const uid = currentUser?.id;
+    const ip1 = state.p1.id === uid;
+    setAmIP1(ip1);
+    setGameState(prev => ({
+      ...prev,
+      p1: { id: state.p1.id, username: state.p1.username, hp: state.p1.hp, buffs: state.p1.buffs || [] },
+      p2: state.p2 ? { id: state.p2.id, username: state.p2.username, hp: state.p2.hp, buffs: state.p2.buffs || [] } : prev.p2,
+    }));
+  }
 
   useEffect(() => {
     const u = getUser();
@@ -41,34 +53,11 @@ function GameContent() {
     const socket = connectSocket();
     socketRef.current = socket;
 
-    // Player joined — init state
-    socket.on("game:player_joined", ({ state }) => {
-  setGameState(prev => ({
-    ...prev,
-    p1: { id: state.p1.id, username: state.p1.username, hp: state.p1.hp, buffs: state.p1.buffs },
-    p2: state.p2 ? { id: state.p2.id, username: state.p2.username, hp: state.p2.hp, buffs: state.p2.buffs } : prev.p2,
-  }));
-});
+    socket.on("game:player_joined", ({ state }) => initState(state, u));
+    socket.on("game:joined", ({ state }) => { if (state) initState(state, u); });
+    socket.on("game:ranked_match_found", ({ state }) => initState(state, u));
+    socket.on("game:challenge_accepted", ({ state }) => initState(state, u));
 
-    // Challenge accepted init
-    socket.on("game:challenge_accepted", ({ state }) => {
-      setGameState(prev => ({
-        ...prev,
-        p1: { id: state.p1.id, username: state.p1.username, hp: state.p1.hp, buffs: state.p1.buffs },
-        p2: state.p2 ? { id: state.p2.id, username: state.p2.username, hp: state.p2.hp, buffs: state.p2.buffs } : prev.p2,
-      }));
-    });
-
-    socket.on("game:joined", ({ state }) => {
-  if (!state) return;
-  setGameState(prev => ({
-    ...prev,
-    p1: { id: state.p1.id, username: state.p1.username, hp: state.p1.hp, buffs: state.p1.buffs },
-    p2: state.p2 ? { id: state.p2.id, username: state.p2.username, hp: state.p2.hp, buffs: state.p2.buffs } : prev.p2,
-  }));
-});
-
-    // Round start
     socket.on("game:round_start", ({ round, timer, p1HP, p2HP, p1Buffs, p2Buffs }) => {
       setSpyHint(null);
       setOpponentExposed(null);
@@ -78,10 +67,9 @@ function GameContent() {
         ...prev,
         phase:"picking", round, timer,
         myMove: null, opponentPicked: false, lockedMove: null,
-        p1: { ...prev.p1, hp:p1HP, buffs:p1Buffs },
-        p2: { ...prev.p2, hp:p2HP, buffs:p2Buffs },
+        p1: { ...prev.p1, hp:p1HP, buffs: p1Buffs || [] },
+        p2: { ...prev.p2, hp:p2HP, buffs: p2Buffs || [] },
       }));
-      // Countdown
       let t = timer;
       if (timerRef.current) clearInterval(timerRef.current);
       timerRef.current = setInterval(() => {
@@ -91,38 +79,21 @@ function GameContent() {
       }, 1000);
     });
 
-    // Spy: kita dapat hint 1 move yang TIDAK dipilih lawan
-    socket.on("game:spy_reveal", ({ notPickedMove }) => {
-      setSpyHint(notPickedMove);
-    });
+    socket.on("game:spy_reveal", ({ notPickedMove }) => setSpyHint(notPickedMove));
+    socket.on("game:opponent_exposed", ({ move }) => setOpponentExposed(move));
+    socket.on("game:move_locked", ({ lockedMove }) => setGameState(prev => ({ ...prev, lockedMove })));
+    socket.on("game:opponent_picked", () => setGameState(prev => ({ ...prev, opponentPicked: true })));
 
-    // Exposed: lawan kita terexpose, kita tahu movenya
-    socket.on("game:opponent_exposed", ({ move }) => {
-      setOpponentExposed(move);
-    });
-
-    // Move locked (debuff)
-    socket.on("game:move_locked", ({ lockedMove }) => {
-      setGameState(prev => ({ ...prev, lockedMove }));
-    });
-
-    // Opponent picked
-    socket.on("game:opponent_picked", () => {
-      setGameState(prev => ({ ...prev, opponentPicked: true }));
-    });
-
-    // Round result
     socket.on("game:round_result", (data) => {
       clearInterval(timerRef.current);
       setGameState(prev => ({
         ...prev, phase:"reveal",
-        p1: { ...prev.p1, hp:data.p1HP },
-        p2: { ...prev.p2, hp:data.p2HP },
+        p1: { ...prev.p1, hp: data.p1HP },
+        p2: { ...prev.p2, hp: data.p2HP },
       }));
       setRoundResult(data);
     });
 
-    // Trivia start
     socket.on("game:trivia_start", (data) => {
       setGameState(prev => ({ ...prev, phase:"trivia" }));
       setTrivia({ ...data, myAnswer: null, triviaTimer: data.timeLimit });
@@ -134,64 +105,38 @@ function GameContent() {
       }, 1000);
     });
 
-    // Trivia self answered
     socket.on("game:trivia_self_answered", ({ correct, correctAnswer }) => {
       setTrivia(prev => prev ? { ...prev, answered: true, correct, correctAnswer } : prev);
     });
 
-    // Effect received
-    socket.on("game:effect_received", ({ effect, hp }) => {
-      showEffect(effect);
-    });
+    socket.on("game:effect_received", ({ effect }) => showEffect(effect));
 
-    // Trivia resolved
     socket.on("game:trivia_resolved", (data) => {
       setTrivia(prev => prev ? { ...prev, resolved: true, resolution: data } : prev);
       setGameState(prev => ({
         ...prev, phase:"reveal",
-        p1: { ...prev.p1, hp:data.p1HP },
-        p2: { ...prev.p2, hp:data.p2HP },
+        p1: { ...prev.p1, hp: data.p1HP },
+        p2: { ...prev.p2, hp: data.p2HP },
       }));
     });
 
-    // Game over
     socket.on("game:over", (data) => {
       clearInterval(timerRef.current);
       setGameState(prev => ({ ...prev, phase:"gameover" }));
       setGameOver(data);
     });
 
-    // Disconnect
     socket.on("game:player_disconnected", ({ username }) => {
       showEffect({ id:"disconnect", name:`❌ ${username} keluar`, type:"debuff" });
     });
 
-    socket.on("game:ranked_match_found", ({ state }) => {
-      setGameState(prev => ({
-        ...prev,
-        p1: { ...prev.p1, id: state.p1.id, username: state.p1.username, hp: state.p1.hp, buffs: state.p1.buffs },
-        p2: state.p2 ? { ...prev.p2, id: state.p2.id, username: state.p2.username, hp: state.p2.hp, buffs: state.p2.buffs } : prev.p2,
-      }));
-    });
-
     return () => {
       clearInterval(timerRef.current);
-      socket.off("game:player_joined");
-      socket.off("game:challenge_accepted");
-      socket.off("game:joined");
-      socket.off("game:round_start");
-      socket.off("game:move_locked");
-      socket.off("game:opponent_picked");
-      socket.off("game:round_result");
-      socket.off("game:trivia_start");
-      socket.off("game:trivia_self_answered");
-      socket.off("game:effect_received");
-      socket.off("game:trivia_resolved");
-      socket.off("game:over");
-      socket.off("game:player_disconnected");
-      socket.off("game:ranked_match_found");
-      socket.off("game:spy_reveal");
-      socket.off("game:opponent_exposed");
+      ["game:player_joined","game:joined","game:challenge_accepted","game:ranked_match_found",
+       "game:round_start","game:move_locked","game:opponent_picked","game:round_result",
+       "game:trivia_start","game:trivia_self_answered","game:effect_received","game:trivia_resolved",
+       "game:over","game:player_disconnected","game:spy_reveal","game:opponent_exposed"
+      ].forEach(ev => socket.off(ev));
     };
   }, [roomCode]);
 
@@ -213,13 +158,19 @@ function GameContent() {
     socketRef.current?.emit("game:trivia_answer", { roomCode, answer });
   }
 
-  // Determine my player (p1 or p2)
-  const isP1 = user && gameState.p1.id === user.id;
+  // isP1 menggunakan amIP1 yang diset saat init — paling reliable
+  const isP1 = amIP1 === true;
   const me = isP1 ? gameState.p1 : gameState.p2;
   const opponent = isP1 ? gameState.p2 : gameState.p1;
-  const myResult = roundResult ? (roundResult.result === "DRAW" ? "DRAW" : (isP1 ? roundResult.result === "P1_WIN" : roundResult.result === "P2_WIN") ? "WIN" : "LOSE") : null;
 
-  const timerPct = gameState.timer / 5;
+  // Hasil ronde dari perspektif player ini
+  let myResult = null;
+  if (roundResult) {
+    if (roundResult.result === "DRAW") myResult = "DRAW";
+    else if (isP1) myResult = roundResult.result === "P1_WIN" ? "WIN" : "LOSE";
+    else myResult = roundResult.result === "P2_WIN" ? "WIN" : "LOSE";
+  }
+
   const timerColor = gameState.timer <= 2 ? "#E24B4A" : "#8B2635";
 
   if (gameState.phase === "waiting" && !gameState.round) {
@@ -250,8 +201,12 @@ function GameContent() {
         <div>
           <div style={{ fontWeight:"800", fontSize:"18px", color:"#8B2635" }}>JANKEN</div>
           <div style={{ fontSize:"11px", color:"#888", fontWeight:"600", letterSpacing:"0.5px" }}>
-            RONDE {gameState.round} {gameState.round > 0 && gameState.round % 3 === 0 ? "• 🎯 TRIVIA BERIKUTNYA" : ""}
+            RONDE {gameState.round}
+            {gameState.round > 0 && gameState.round % 3 === 0 ? " • 🎯 TRIVIA BERIKUTNYA" : ""}
           </div>
+        </div>
+        <div style={{ fontSize:"11px", color:"#aaa", fontWeight:"600" }}>
+          {isP1 ? "P1" : "P2"}
         </div>
       </nav>
 
@@ -266,20 +221,20 @@ function GameContent() {
           <div style={{ display:"flex", gap:"8px", alignItems:"center" }}>
             <div style={{ flex:1 }}>
               <div style={{ display:"flex", justifyContent:"space-between", fontSize:"11px", color:"#888", marginBottom:"4px" }}>
-                <span>❤️ {me?.hp || 0} HP</span>
-                <span style={{ fontSize:"10px", color:"#aaa" }}>{(me?.buffs || []).join(" ")}</span>
+                <span>❤️ {me?.hp ?? 0} HP</span>
+                <span style={{ fontSize:"10px", color:"#aaa" }}>{(me?.buffs||[]).join(" ")}</span>
               </div>
               <div style={{ height:"10px", background:"#f0e8e8", borderRadius:"5px", overflow:"hidden" }}>
-                <div style={{ height:"100%", width:`${me?.hp || 0}%`, background:"#2D6A9F", borderRadius:"5px", transition:"width 0.5s ease" }}></div>
+                <div style={{ height:"100%", width:`${me?.hp ?? 0}%`, background:"#2D6A9F", borderRadius:"5px", transition:"width 0.5s ease" }}></div>
               </div>
             </div>
             <div style={{ flex:1 }}>
               <div style={{ display:"flex", justifyContent:"space-between", fontSize:"11px", color:"#888", marginBottom:"4px" }}>
-                <span style={{ fontSize:"10px", color:"#aaa" }}>{(opponent?.buffs || []).join(" ")}</span>
-                <span>❤️ {opponent?.hp || 0} HP</span>
+                <span style={{ fontSize:"10px", color:"#aaa" }}>{(opponent?.buffs||[]).join(" ")}</span>
+                <span>❤️ {opponent?.hp ?? 0} HP</span>
               </div>
               <div style={{ height:"10px", background:"#f0e8e8", borderRadius:"5px", overflow:"hidden" }}>
-                <div style={{ height:"100%", width:`${opponent?.hp || 0}%`, background:"#8B2635", borderRadius:"5px", transition:"width 0.5s ease", marginLeft:"auto" }}></div>
+                <div style={{ height:"100%", width:`${opponent?.hp ?? 0}%`, background:"#8B2635", borderRadius:"5px", transition:"width 0.5s ease", marginLeft:"auto" }}></div>
               </div>
             </div>
           </div>
@@ -302,9 +257,13 @@ function GameContent() {
             <div style={{ flex:1, textAlign:"center" }}>
               <div style={{ fontSize:"12px", fontWeight:"700", color:"#2D6A9F", letterSpacing:"1px", marginBottom:"8px" }}>KAMU</div>
               <div style={{ width:"100px", height:"100px", borderRadius:"50%", border:"3px solid #8B2635", margin:"0 auto", background:"#F4A090", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"44px" }}>
-                {gameState.phase === "reveal" ? MOVE_ICONS[isP1 ? roundResult?.p1Move : roundResult?.p2Move] || "?" : gameState.myMove ? MOVE_ICONS[gameState.myMove] : "?"}
+                {gameState.phase === "reveal"
+                  ? MOVE_ICONS[isP1 ? roundResult?.p1Move : roundResult?.p2Move] || "?"
+                  : gameState.myMove ? MOVE_ICONS[gameState.myMove] : "?"}
               </div>
-              {gameState.lockedMove && <div style={{ fontSize:"11px", color:"#E24B4A", fontWeight:"700", marginTop:"6px" }}>🔒 {gameState.lockedMove}</div>}
+              {gameState.lockedMove && (
+                <div style={{ fontSize:"11px", color:"#E24B4A", fontWeight:"700", marginTop:"6px" }}>🔒 Terkunci</div>
+              )}
             </div>
 
             {/* VS */}
@@ -314,26 +273,27 @@ function GameContent() {
             <div style={{ flex:1, textAlign:"center" }}>
               <div style={{ display:"inline-block", background:"#f0e8e8", color:"#888", fontSize:"11px", fontWeight:"700", padding:"4px 10px", borderRadius:"20px", letterSpacing:"1px", marginBottom:"8px" }}>LAWAN</div>
               <div style={{ width:"100px", height:"100px", borderRadius:"50%", border:"2px solid #e8d8d8", margin:"0 auto", background:"#f5efef", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"40px" }}>
-                {gameState.phase === "reveal" 
-                ? MOVE_ICONS[isP1 ? roundResult?.p2Move : roundResult?.p1Move] || "?"
-                : opponentExposed 
-                  ? MOVE_ICONS[opponentExposed]
-                  : gameState.opponentPicked ? "✅" : "?"
-              }
+                {gameState.phase === "reveal"
+                  ? MOVE_ICONS[isP1 ? roundResult?.p2Move : roundResult?.p1Move] || "?"
+                  : opponentExposed
+                    ? MOVE_ICONS[opponentExposed]
+                    : gameState.opponentPicked ? "✅" : "?"}
               </div>
             </div>
           </div>
         )}
 
         {/* Round Result */}
-        {gameState.phase === "reveal" && roundResult && !trivia && (
+        {gameState.phase === "reveal" && roundResult && !trivia?.resolved === false && (
           <div style={{ textAlign:"center", marginBottom:"20px", animation:"fadeIn 0.3s ease" }}>
             <div style={{ fontSize:"28px", fontWeight:"900", color: myResult==="WIN"?"#4CAF7D":myResult==="LOSE"?"#E24B4A":"#888", marginBottom:"4px" }}>
               {myResult === "WIN" ? "🎉 MENANG!" : myResult === "LOSE" ? "💔 KALAH!" : "🤝 SERI!"}
             </div>
             {roundResult.result !== "DRAW" && (
               <div style={{ fontSize:"13px", color:"#888" }}>
-                {myResult === "WIN" ? `Damage ke lawan: -${isP1?roundResult.damageToPl2:roundResult.damageToPl1} HP` : `Kamu kena: -${isP1?roundResult.damageToPl1:roundResult.damageToPl2} HP`}
+                {myResult === "WIN"
+                  ? `Damage ke lawan: -${isP1 ? roundResult.damageToPl2 : roundResult.damageToPl1} HP`
+                  : `Kamu kena: -${isP1 ? roundResult.damageToPl1 : roundResult.damageToPl2} HP`}
               </div>
             )}
           </div>
@@ -345,14 +305,15 @@ function GameContent() {
             <div style={{ textAlign:"center", marginBottom:"12px" }}>
               <span style={{ fontSize:"12px", fontWeight:"700", color:"#888", letterSpacing:"2px" }}>PILIH SENJATAMU</span>
             </div>
+
             {spyHint && (
-              <div style={{ textAlign:"center", marginBottom:"10px", padding:"8px 16px", background:"#e8f5e9", borderRadius:"12px", fontSize:"13px", fontWeight:"700", color:"#2e7d32" }}>
+              <div style={{ textAlign:"center", marginBottom:"10px", padding:"10px 16px", background:"#e8f5e9", borderRadius:"12px", fontSize:"13px", fontWeight:"700", color:"#2e7d32" }}>
                 👁️ Spy: Lawan TIDAK memilih {spyHint === "ROCK" ? "BATU" : spyHint === "PAPER" ? "KERTAS" : "GUNTING"}
               </div>
             )}
 
             {opponentExposed && (
-              <div style={{ textAlign:"center", marginBottom:"10px", padding:"8px 16px", background:"#fff3e0", borderRadius:"12px", fontSize:"13px", fontWeight:"700", color:"#e65100" }}>
+              <div style={{ textAlign:"center", marginBottom:"10px", padding:"10px 16px", background:"#fff3e0", borderRadius:"12px", fontSize:"13px", fontWeight:"700", color:"#e65100" }}>
                 🔍 Lawan memilih: {opponentExposed === "ROCK" ? "BATU" : opponentExposed === "PAPER" ? "KERTAS" : "GUNTING"}!
               </div>
             )}
@@ -362,8 +323,10 @@ function GameContent() {
                 const isLocked = gameState.lockedMove && gameState.lockedMove !== m;
                 const isSelected = gameState.myMove === m || gameState.lockedMove === m;
                 return (
-                  <button key={m} onClick={() => !isLocked && sendMove(m)} disabled={!!gameState.myMove || !!gameState.lockedMove}
-                    style={{ flex:1, background:"#fff", border: isSelected?"2.5px solid #8B2635":"2px solid transparent", borderRadius:"20px", padding:"20px 8px", cursor: isLocked?"not-allowed":"pointer", textAlign:"center", boxShadow: isSelected?"0 4px 20px rgba(139,38,53,0.15)":"0 2px 12px rgba(0,0,0,0.05)", opacity: isLocked?0.4:1, transition:"all 0.15s" }}>
+                  <button key={m}
+                    onClick={() => !isLocked && !gameState.myMove && !gameState.lockedMove && sendMove(m)}
+                    disabled={!!gameState.myMove || !!gameState.lockedMove}
+                    style={{ flex:1, background:"#fff", border: isSelected?"2.5px solid #8B2635":"2px solid transparent", borderRadius:"20px", padding:"20px 8px", cursor: (isLocked||gameState.myMove||gameState.lockedMove)?"not-allowed":"pointer", textAlign:"center", boxShadow: isSelected?"0 4px 20px rgba(139,38,53,0.15)":"0 2px 12px rgba(0,0,0,0.05)", opacity: isLocked?0.3:1, transition:"all 0.15s" }}>
                     <div style={{ fontSize:"28px", marginBottom:"8px" }}>{MOVE_EMOJI[m]}</div>
                     <div style={{ fontSize:"12px", fontWeight:"800", color: isSelected?"#8B2635":"#1a1a1a", letterSpacing:"0.5px" }}>
                       {m === "ROCK" ? "BATU" : m === "PAPER" ? "KERTAS" : "GUNTING"}
@@ -388,8 +351,8 @@ function GameContent() {
               {trivia.options?.map((opt, i) => {
                 let bg = "#fff", border = "1.5px solid #e0d8d8", color = "#1a1a1a";
                 if (trivia.myAnswer === opt) { bg = "#f5eded"; border = "2px solid #8B2635"; }
-                if (trivia.answered && opt === trivia.correctAnswer) { bg = "#e8f5e9"; border = "2px solid #4CAF7D"; color="#2e7d32"; }
-                if (trivia.answered && trivia.myAnswer === opt && opt !== trivia.correctAnswer) { bg="#fde8e8"; border="2px solid #E24B4A"; color="#c62828"; }
+                if (trivia.answered && opt === trivia.correctAnswer) { bg = "#e8f5e9"; border = "2px solid #4CAF7D"; color = "#2e7d32"; }
+                if (trivia.answered && trivia.myAnswer === opt && opt !== trivia.correctAnswer) { bg = "#fde8e8"; border = "2px solid #E24B4A"; color = "#c62828"; }
                 return (
                   <button key={i} onClick={() => answerTrivia(opt)} disabled={!!trivia.myAnswer}
                     style={{ padding:"14px 16px", borderRadius:"12px", border, background:bg, color, fontWeight:"600", fontSize:"14px", textAlign:"left", cursor: trivia.myAnswer?"default":"pointer", transition:"all 0.15s" }}>
@@ -401,6 +364,11 @@ function GameContent() {
             {trivia.answered && (
               <div style={{ marginTop:"16px", padding:"12px", borderRadius:"12px", background: trivia.correct?"#e8f5e9":"#fde8e8", color: trivia.correct?"#2e7d32":"#c62828", fontSize:"14px", fontWeight:"700", textAlign:"center" }}>
                 {trivia.correct ? "✅ Benar! Kamu dapat buff!" : "❌ Salah! Kamu kena debuff!"}
+              </div>
+            )}
+            {trivia.resolved && (
+              <div style={{ marginTop:"12px", padding:"10px", borderRadius:"12px", background:"#f5f5f5", fontSize:"12px", color:"#888", textAlign:"center" }}>
+                Ronde berikutnya dimulai sebentar lagi...
               </div>
             )}
           </div>
