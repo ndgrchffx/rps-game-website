@@ -1,6 +1,3 @@
-// prisma/schema.prisma
-// Schema Database untuk Aplikasi Realtime Chat
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -10,106 +7,107 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ============================================================
-// MODEL USER
-// Menyimpan data pengguna yang terdaftar
-// ============================================================
 model User {
-  id        String   @id @default(cuid())
-  username  String   @unique
-  email     String   @unique
-  password  String   // sudah di-hash dengan bcrypt
-  avatar    String?  // URL avatar (opsional)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id              String   @id @default(cuid())
+  username        String   @unique
+  email           String   @unique
+  password        String
+  avatar          String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  isOnline        Boolean  @default(false)
+  lastSeen        DateTime @default(now())
+  rankedPoints    Int      @default(1000)
+  wins            Int      @default(0)
+  losses          Int      @default(0)
+  pushSubscription String?
 
-  // Status online/offline
-  isOnline  Boolean  @default(false)
-  lastSeen  DateTime @default(now())
-
-  // Relasi ke pesan yang dikirim
-  sentMessages    Message[]
-
-  // Relasi ke room yang dibuat
-  createdRooms    Room[]   @relation("RoomCreator")
-
-  // Relasi many-to-many dengan Room (member)
-  rooms           RoomMember[]
+  gamesAsPlayer1 GameSession[] @relation("Player1")
+  gamesAsPlayer2 GameSession[] @relation("Player2")
+  wonGames       GameSession[] @relation("Winner")
 
   @@map("users")
 }
 
-// ============================================================
-// MODEL ROOM
-// Menyimpan data ruang chat (room)
-// ============================================================
-model Room {
-  id          String   @id @default(cuid())
-  name        String
-  description String?
-  isPrivate   Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+model GameSession {
+  id                 String     @id @default(cuid())
+  roomCode           String     @unique
+  mode               GameMode   @default(CASUAL)
+  status             GameStatus @default(WAITING)
+  player1Id          String
+  player1            User       @relation("Player1", fields: [player1Id], references: [id])
+  player2Id          String?
+  player2            User?      @relation("Player2", fields: [player2Id], references: [id])
+  winnerId           String?
+  winner             User?      @relation("Winner", fields: [winnerId], references: [id])
+  player1HP          Int        @default(100)
+  player2HP          Int        @default(100)
+  currentRound       Int        @default(1)
+  player1PointsDelta Int        @default(0)
+  player2PointsDelta Int        @default(0)
+  rounds             GameRound[]
+  triviaEvents       TriviaEvent[]
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
 
-  // Relasi ke creator (User)
-  creatorId   String
-  creator     User     @relation("RoomCreator", fields: [creatorId], references: [id])
-
-  // Relasi ke member room
-  members     RoomMember[]
-
-  // Relasi ke pesan dalam room
-  messages    Message[]
-
-  @@map("rooms")
+  @@map("game_sessions")
 }
 
-// ============================================================
-// MODEL ROOM MEMBER (Many-to-Many User <-> Room)
-// Menyimpan relasi user dan room beserta status join
-// ============================================================
-model RoomMember {
-  id       String   @id @default(cuid())
-  joinedAt DateTime @default(now())
-
-  userId   String
-  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  roomId   String
-  room     Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, roomId])
-  @@map("room_members")
+enum GameMode {
+  CASUAL
+  RANKED
 }
 
-// ============================================================
-// MODEL MESSAGE
-// Menyimpan pesan chat
-// ============================================================
-model Message {
-  id        String      @id @default(cuid())
-  content   String
-  type      MessageType @default(TEXT)
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
-  isDeleted Boolean     @default(false)
-
-  // Relasi ke pengirim (User)
-  senderId  String
-  sender    User         @relation(fields: [senderId], references: [id])
-
-  // Relasi ke room
-  roomId    String
-  room      Room         @relation(fields: [roomId], references: [id], onDelete: Cascade)
-
-  @@map("messages")
+enum GameStatus {
+  WAITING
+  IN_PROGRESS
+  FINISHED
 }
 
-// ============================================================
-// ENUM TIPE PESAN
-// ============================================================
-enum MessageType {
-  TEXT
-  IMAGE
-  SYSTEM // pesan otomatis (contoh: "User bergabung")
+model GameRound {
+  id           String      @id @default(cuid())
+  sessionId    String
+  session      GameSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  roundNumber  Int
+  player1Move  Move?
+  player2Move  Move?
+  result       RoundResult?
+  damageToPl1  Int         @default(0)
+  damageToPl2  Int         @default(0)
+  player1Buffs String      @default("[]")
+  player2Buffs String      @default("[]")
+  createdAt    DateTime    @default(now())
+
+  @@map("game_rounds")
+}
+
+enum Move {
+  ROCK
+  PAPER
+  SCISSORS
+}
+
+enum RoundResult {
+  P1_WIN
+  P2_WIN
+  DRAW
+}
+
+model TriviaEvent {
+  id             String      @id @default(cuid())
+  sessionId      String
+  session        GameSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  afterRound     Int
+  question       String
+  options        String
+  correctAnswer  String
+  player1Answer  String?
+  player2Answer  String?
+  player1Correct Boolean?
+  player2Correct Boolean?
+  player1Effect  String?
+  player2Effect  String?
+  createdAt      DateTime    @default(now())
+
+  @@map("trivia_events")
 }

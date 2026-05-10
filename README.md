@@ -1,269 +1,156 @@
-# 🎮 Janken Chat — Realtime Chat App (UAS)
+# JANKEN - RPS Battle Arena 🥊
 
-**Naila Salsabila | NPM: 247006111004**  
-Program Studi Informatika, Universitas Siliwangi
+Game Rock Paper Scissors multiplayer realtime dengan sistem HP, Trivia, Ranked Match, dan Web Push Notification.
 
----
+## Tech Stack
 
-## 📌 Deskripsi Project
+- **Frontend**: Next.js 14 (App Router) + React 18
+- **Backend**: Node.js custom server + Socket.io (realtime)
+- **Database**: PostgreSQL + Prisma ORM
+- **Auth**: JWT (jsonwebtoken) + bcryptjs
+- **Push Notification**: Web Push API (web-push)
 
-Aplikasi **Realtime Chat** berbasis web menggunakan:
+## Fitur Platform-Specific
 
-| Teknologi       | Fungsi                        |
-|-----------------|-------------------------------|
-| **Next.js**     | Frontend + API Routes         |
-| **Socket.io**   | Komunikasi realtime           |
-| **Prisma ORM**  | Interaksi dengan database     |
-| **PostgreSQL**  | Penyimpanan data permanen     |
-| **JWT**         | Autentikasi token             |
-| **bcryptjs**    | Hash password                 |
+### Web
+- 🔔 **Web Push Notification** – Challenge dari leaderboard dikirim via push notif bahkan saat tab tertutup
+- 🖱️ **Drag & Drop Avatar** – Upload foto profil dengan drag & drop file
 
----
+### Mobile (React Native – repo terpisah)
+- 📷 **Camera Access** – Selfie untuk foto profil (expo-camera)
+- 🔔 **Push Notification** – Via Expo Notifications
 
-## 🎯 Fitur yang Diimplementasikan
+## Mekanisme Game
 
-### Fitur Wajib (OBE)
-- ✅ Registrasi pengguna baru
-- ✅ Login pengguna dengan JWT
-- ✅ Kirim & terima pesan secara realtime (Socket.io)
-- ✅ Tampilkan pesan langsung tanpa refresh halaman
-- ✅ Status online / offline pengguna
+### Alur Permainan
+1. Pilih **Ranked Match** (poin +/-1) atau **Casual Room** (buat/join kode)
+2. Setiap ronde: pilih **Batu/Kertas/Gunting** dalam **5 detik**
+3. Menang ronde → lawan kehilangan **20 HP** (default)
+4. Kalah HP → game selesai
 
-### Fitur Bonus
-- ✅ Typing indicator ("sedang mengetik...")
-- ✅ Riwayat pesan tersimpan di database
-- ✅ Multiple room chat
-- ✅ Last seen timestamp
-- ✅ Pesan sistem otomatis (user bergabung, dll.)
+### Trivia System (setiap 3 ronde)
+- Pertanyaan pilihan ganda muncul
+- **Benar** → Buff random: Shield, Spy, Extra Time, Double Damage, Heal
+- **Salah** → Debuff random: Time Cut, HP Drain, Move Lock, Weakened, Exposed
 
----
+### Buff & Debuff Details
 
-## 🏗️ Arsitektur Sistem
+| Buff | Efek |
+|------|------|
+| 🛡️ Shield | Blok damage 1 ronde |
+| 👁️ Spy | Lihat 1 pilihan yang TIDAK dipilih lawan |
+| ⏱️ Extra Time | +3 detik waktu pilih |
+| ⚔️ Double Damage | Damage 2x ronde ini |
+| 💚 Heal | Pulihkan 15 HP |
 
-```
-Browser (React)
-    │
-    ├── HTTP Request (API Routes) → Next.js → Prisma → PostgreSQL
-    │
-    └── WebSocket (Socket.io Client) → Socket.io Server → Prisma → PostgreSQL
-```
+| Debuff | Efek |
+|--------|------|
+| ⏳ Time Cut | Waktu pilih -2 detik |
+| 💀 HP Drain | Langsung -10 HP |
+| 🔒 Move Lock | 1 pilihan di-lock random |
+| 🪶 Weakened | Damage 0.5x ronde ini |
+| 🔍 Exposed | Pilihanmu terlihat lawan |
 
----
+### Ranked System
+- Setiap menang: **+1 poin ranked**
+- Setiap kalah: **-1 poin ranked**
+- Starting points: **1000**
+- Challenge pemain online dari leaderboard + Web Push Notification
 
-## 📁 Struktur Folder
+## Setup & Instalasi
 
-```
-rps-game/
-├── prisma/
-│   ├── schema.prisma        ← Model database (User, Room, Message)
-│   └── seed.js              ← Data awal database
-│
-├── src/
-│   ├── app/
-│   │   ├── api/
-│   │   │   ├── auth/
-│   │   │   │   ├── register/route.js  ← POST /api/auth/register
-│   │   │   │   ├── login/route.js     ← POST /api/auth/login
-│   │   │   │   └── logout/route.js    ← POST /api/auth/logout
-│   │   │   ├── messages/route.js      ← GET & POST /api/messages
-│   │   │   ├── rooms/
-│   │   │   │   ├── route.js           ← GET & POST /api/rooms
-│   │   │   │   └── join/route.js      ← POST /api/rooms/join
-│   │   │   ├── users/route.js         ← GET /api/users
-│   │   │   └── socket/route.js        ← Socket.io info
-│   │   │
-│   │   ├── login/page.js              ← Halaman login (sudah ada)
-│   │   ├── lobby/page.js              ← Halaman lobby
-│   │   └── ...
-│   │
-│   └── lib/
-│       ├── prisma.js        ← Singleton Prisma client
-│       ├── jwt.js           ← Helper JWT (generate, verify)
-│       └── socket.js        ← Socket.io client helper
-│
-├── server.js                ← Custom server Node.js + Socket.io
-├── package.json
-└── .env                     ← Konfigurasi environment
-```
+### 1. Prasyarat
+- Node.js >= 18
+- PostgreSQL (local atau cloud seperti Supabase/Neon)
 
----
-
-## ⚙️ Cara Setup & Menjalankan
-
-### 1. Install Dependencies
+### 2. Instalasi
 ```bash
 npm install
 ```
 
-### 2. Siapkan Environment
+### 3. Environment Variables
+Salin `.env.example` menjadi `.env` dan isi:
 ```bash
-# Salin file contoh
 cp .env.example .env
-
-# Edit file .env dan isi DATABASE_URL dengan koneksi PostgreSQL kamu
 ```
 
-Isi file `.env`:
-```env
-DATABASE_URL="postgresql://postgres:PASSWORD@localhost:5432/janken_chat"
-JWT_SECRET="secret_kamu_yang_aman"
+Edit `.env`:
+```
+DATABASE_URL="postgresql://user:password@localhost:5432/janken_db"
+JWT_SECRET="random-secret-string"
 NEXT_PUBLIC_APP_URL="http://localhost:3000"
 ```
 
-### 3. Buat Database PostgreSQL
-```sql
--- Di PostgreSQL, buat database baru
-CREATE DATABASE janken_chat;
+Untuk VAPID keys (Web Push), generate dengan:
+```bash
+npx web-push generate-vapid-keys
 ```
 
-### 4. Jalankan Migrasi Database
+### 4. Database
 ```bash
-# Generate Prisma client
-npm run db:generate
-
-# Jalankan migrasi (buat tabel)
-npm run db:migrate
-# → Ketik nama migrasi: "init_chat_database"
+npm run db:generate   # generate Prisma client
+npm run db:push       # push schema ke database
+npm run db:seed       # (opsional) isi data awal
 ```
 
-### 5. Seed Data Awal (Opsional)
+### 5. Jalankan
 ```bash
-npm run db:seed
-```
-Ini akan membuat:
-- User admin (admin@janken.com / admin123)
-- Room "General" dan "Gaming"
-
-### 6. Jalankan Aplikasi
-```bash
-# Development (gunakan custom server)
 npm run dev
-
-# Production
-npm run build
-npm start
 ```
 
-Buka browser: **http://localhost:3000**
+Buka [http://localhost:3000](http://localhost:3000)
 
----
-
-## 🔌 API Endpoints
-
-| Method | Endpoint               | Fungsi                        | Auth |
-|--------|------------------------|-------------------------------|------|
-| POST   | `/api/auth/register`   | Registrasi user baru          | ❌   |
-| POST   | `/api/auth/login`      | Login & dapatkan token JWT    | ❌   |
-| POST   | `/api/auth/logout`     | Logout & update status offline| ✅   |
-| GET    | `/api/rooms`           | Ambil semua room user         | ✅   |
-| POST   | `/api/rooms`           | Buat room baru                | ✅   |
-| POST   | `/api/rooms/join`      | Bergabung ke room             | ✅   |
-| GET    | `/api/messages?roomId` | Ambil riwayat pesan           | ✅   |
-| POST   | `/api/messages`        | Kirim pesan (via HTTP)        | ✅   |
-| GET    | `/api/users`           | Daftar user & status online   | ✅   |
-
-✅ = Butuh Authorization header: `Bearer <token>`
-
----
-
-## 📡 Socket.io Events
-
-### Client → Server (emit)
-| Event           | Data                        | Keterangan                  |
-|-----------------|-----------------------------|-----------------------------|
-| `room:join`     | `{ roomId }`                | Bergabung ke socket room    |
-| `room:leave`    | `{ roomId }`                | Keluar dari socket room     |
-| `message:send`  | `{ roomId, content }`       | Kirim pesan                 |
-| `typing:start`  | `{ roomId }`                | Mulai mengetik              |
-| `typing:stop`   | `{ roomId }`                | Berhenti mengetik           |
-
-### Server → Client (on/listen)
-| Event              | Data                              | Keterangan                  |
-|--------------------|-----------------------------------|-----------------------------|
-| `message:new`      | `{ id, content, sender, roomId }` | Pesan baru masuk            |
-| `user:online`      | `{ userId, username }`            | User online                 |
-| `user:offline`     | `{ userId, username, lastSeen }`  | User offline                |
-| `typing:started`   | `{ userId, username, roomId }`    | User sedang mengetik        |
-| `typing:stopped`   | `{ userId, username, roomId }`    | User berhenti mengetik      |
-| `room:user_joined` | `{ userId, username, roomId }`    | User bergabung ke room      |
-| `room:user_left`   | `{ userId, username, roomId }`    | User keluar dari room       |
-
----
-
-## 🗄️ Model Database
+## Struktur Folder
 
 ```
-User
- ├── id, username, email, password (hashed)
- ├── isOnline, lastSeen, avatar
- ├── sentMessages → [Message]
- └── rooms → [RoomMember]
-
-Room
- ├── id, name, description, isPrivate
- ├── creatorId → User
- ├── members → [RoomMember]
- └── messages → [Message]
-
-RoomMember (junction User ↔ Room)
- ├── userId → User
- └── roomId → Room
-
-Message
- ├── id, content, type (TEXT/IMAGE/SYSTEM)
- ├── senderId → User
- └── roomId → Room
+src/
+├── app/
+│   ├── api/
+│   │   ├── auth/login, register, logout
+│   │   ├── leaderboard/
+│   │   ├── profile/
+│   │   └── push/vapid/
+│   ├── lobby/          ← Halaman utama, buat/join room
+│   ├── waiting/        ← Tunggu lawan
+│   ├── game/           ← Arena permainan
+│   ├── leaderboard/    ← Ranking + Challenge
+│   └── profile/        ← Profil + Drag&Drop + Push
+├── lib/
+│   ├── auth.js         ← JWT helpers
+│   ├── prisma.js       ← Prisma client
+│   └── socket.js       ← Socket.io client
+server.js               ← Custom server + Game Engine
+public/
+└── sw.js               ← Service Worker (Web Push)
+prisma/
+└── schema.prisma       ← Database schema
 ```
 
----
+## Arsitektur Sistem
 
-## 🧪 Contoh Penggunaan API (dengan fetch)
-
-### Register
-```javascript
-const res = await fetch("/api/auth/register", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({
-    username: "naila",
-    email:    "naila@example.com",
-    password: "password123"
-  })
-});
-const data = await res.json();
-// data.data.token → simpan untuk request berikutnya
+```
+[Web Client] ←─── WebSocket ───→ [Node.js + Socket.io]
+[Mobile]     ←─── REST API  ───→ [Next.js API Routes ]
+                                         │
+                                   [PostgreSQL via Prisma]
+                                         │
+                                   [Open Trivia DB API]
+                                         │
+                                   [Web Push (VAPID)]
 ```
 
-### Kirim Pesan via HTTP
-```javascript
-await fetch("/api/messages", {
-  method: "POST",
-  headers: {
-    "Content-Type":  "application/json",
-    "Authorization": `Bearer ${token}`
-  },
-  body: JSON.stringify({ roomId: "xxx", content: "Halo semua!" })
-});
-```
+## Pembagian Tugas Tim
 
-### Koneksi Socket.io
-```javascript
-import { initSocket, joinRoom, sendMessage } from "@/lib/socket";
+| Anggota | Peran |
+|---------|-------|
+| Anggota 1 | Backend: server.js, game engine, Socket.io events |
+| Anggota 2 | Frontend: UI/UX, halaman game, waiting, lobby |
+| Anggota 3 | Database: Prisma schema, API routes, auth |
+| Anggota 4 | Mobile: React Native app, kamera, push notif mobile |
 
-const socket = initSocket(token);
+## Deliverables
 
-// Join room
-joinRoom("roomId");
-
-// Kirim pesan via socket (realtime)
-sendMessage("roomId", "Halo!");
-
-// Dengarkan pesan baru
-socket.on("message:new", (message) => {
-  console.log("Pesan baru:", message);
-});
-```
-
----
-
-*UAS Pemrograman Web — Universitas Siliwangi 2025/2026*
+- [x] Code Repository (GitHub)
+- [x] Dokumen Teknis (README ini)
+- [ ] Video Demonstrasi (5-10 menit)
+- [ ] Presentasi UAS

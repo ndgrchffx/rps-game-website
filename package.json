@@ -1,6 +1,6 @@
 {
-  "name": "rps-game",
-  "version": "0.1.0",
+  "name": "janken-rps-game",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
     "dev": "node server.js",
@@ -17,18 +17,16 @@
   "dependencies": {
     "@prisma/client": "^5.22.0",
     "bcryptjs": "^2.4.3",
-    "canvas-confetti": "^1.9.4",
     "framer-motion": "^12.38.0",
-    "geist": "^1.7.0",
     "jsonwebtoken": "^9.0.2",
     "lucide-react": "^1.14.0",
-    "mysql2": "^3.22.3",
     "next": "^14.2.35",
     "prisma": "^5.22.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "socket.io": "^4.8.1",
-    "socket.io-client": "^4.8.1"
+    "socket.io-client": "^4.8.1",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
