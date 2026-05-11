@@ -1,0 +1,21 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; font-family: 'Segoe UI', system-ui, sans-serif; }
+:root {
+  --red: #8B2635;
+  --red-light: #F4A090;
+  --red-bg: #FDF0EE;
+  --teal: #2D6A6A;
+  --teal-light: #A8DCE7;
+  --green: #4CAF7D;
+  --text: #1a1a1a;
+  --text-muted: #888;
+  --card: #fff;
+  --border: rgba(0,0,0,0.07);
+  --shadow: 0 2px 16px rgba(0,0,0,0.06);
+}
+button { cursor: pointer; font-family: inherit; }
+input { font-family: inherit; }
+@keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.05)} }
+@keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-5px)} 75%{transform:translateX(5px)} }
+@keyframes fadeIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+@keyframes hp-flash { 0%,100%{background:#fff} 50%{background:#fde8e8} }

@@ -1,0 +1,113 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              String   @id @default(cuid())
+  username        String   @unique
+  email           String   @unique
+  password        String
+  avatar          String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  isOnline        Boolean  @default(false)
+  lastSeen        DateTime @default(now())
+  rankedPoints    Int      @default(1000)
+  wins            Int      @default(0)
+  losses          Int      @default(0)
+  pushSubscription String?
+
+  gamesAsPlayer1 GameSession[] @relation("Player1")
+  gamesAsPlayer2 GameSession[] @relation("Player2")
+  wonGames       GameSession[] @relation("Winner")
+
+  @@map("users")
+}
+
+model GameSession {
+  id                 String     @id @default(cuid())
+  roomCode           String     @unique
+  mode               GameMode   @default(CASUAL)
+  status             GameStatus @default(WAITING)
+  player1Id          String
+  player1            User       @relation("Player1", fields: [player1Id], references: [id])
+  player2Id          String?
+  player2            User?      @relation("Player2", fields: [player2Id], references: [id])
+  winnerId           String?
+  winner             User?      @relation("Winner", fields: [winnerId], references: [id])
+  player1HP          Int        @default(100)
+  player2HP          Int        @default(100)
+  currentRound       Int        @default(1)
+  player1PointsDelta Int        @default(0)
+  player2PointsDelta Int        @default(0)
+  rounds             GameRound[]
+  triviaEvents       TriviaEvent[]
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+
+  @@map("game_sessions")
+}
+
+enum GameMode {
+  CASUAL
+  RANKED
+}
+
+enum GameStatus {
+  WAITING
+  IN_PROGRESS
+  FINISHED
+}
+
+model GameRound {
+  id           String      @id @default(cuid())
+  sessionId    String
+  session      GameSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  roundNumber  Int
+  player1Move  Move?
+  player2Move  Move?
+  result       RoundResult?
+  damageToPl1  Int         @default(0)
+  damageToPl2  Int         @default(0)
+  player1Buffs String      @default("[]")
+  player2Buffs String      @default("[]")
+  createdAt    DateTime    @default(now())
+
+  @@map("game_rounds")
+}
+
+enum Move {
+  ROCK
+  PAPER
+  SCISSORS
+}
+
+enum RoundResult {
+  P1_WIN
+  P2_WIN
+  DRAW
+}
+
+model TriviaEvent {
+  id             String      @id @default(cuid())
+  sessionId      String
+  session        GameSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  afterRound     Int
+  question       String
+  options        String
+  correctAnswer  String
+  player1Answer  String?
+  player2Answer  String?
+  player1Correct Boolean?
+  player2Correct Boolean?
+  player1Effect  String?
+  player2Effect  String?
+  createdAt      DateTime    @default(now())
+
+  @@map("trivia_events")
+}
