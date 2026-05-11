@@ -57,11 +57,13 @@ export default function LeaderboardPage() {
     });
 
     socket.on("game:challenge_accepted", ({ roomCode, state }) => {
-      router.push(`/game?room=${roomCode}`);
+      const stateB64 = btoa(JSON.stringify(state));
+      router.push(`/game?room=${roomCode}&gs=${stateB64}`);
     });
 
-    socket.on("game:ranked_match_found", ({ roomCode }) => {
-      router.push(`/game?room=${roomCode}`);
+    socket.on("game:ranked_match_found", ({ roomCode, state }) => {
+      const stateB64 = state ? btoa(JSON.stringify(state)) : "";
+      router.push(`/game?room=${roomCode}${stateB64 ? `&gs=${stateB64}` : ""}`);
     });
 
     return () => {

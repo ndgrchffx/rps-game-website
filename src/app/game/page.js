@@ -15,21 +15,38 @@ function GameContent() {
   const gsParam = params.get("gs"); // game state awal dari URL
 
   const [user, setUser] = useState(null);
-  const [myId, setMyId] = useState(null);
+  const [myId, setMyId] = useState(() => {
+    try {
+      // Ambil dari localStorage/auth langsung supaya tersedia sebelum useEffect
+      const raw = typeof window !== "undefined" ? localStorage.getItem("user") : null;
+      return raw ? JSON.parse(raw).id : null;
+    } catch { return null; }
+  });
 
   // isP1 disimpan di ref supaya tidak stale di closures
   const isP1Ref = useRef(null);
   const [isP1Display, setIsP1Display] = useState(null); // untuk render
 
-  const [gameState, setGameState] = useState({
-    phase: "waiting",
-    round: 0,
-    timer: 5,
-    p1: { id:"", username:"", hp:100, buffs:[] },
-    p2: { id:"", username:"", hp:100, buffs:[] },
-    myMove: null,
-    opponentPicked: false,
-    lockedMove: null,
+  const [gameState, setGameState] = useState(() => {
+    const base = {
+      phase: "waiting",
+      round: 0,
+      timer: 5,
+      p1: { id:"", username:"", hp:100, buffs:[] },
+      p2: { id:"", username:"", hp:100, buffs:[] },
+      myMove: null,
+      opponentPicked: false,
+      lockedMove: null,
+    };
+    if (!gsParam) return base;
+    try {
+      const s = JSON.parse(atob(gsParam));
+      return {
+        ...base,
+        p1: { id: s.p1?.id || "", username: s.p1?.username || "", hp: s.p1?.hp ?? 100, buffs: s.p1?.buffs || [] },
+        p2: s.p2 ? { id: s.p2.id, username: s.p2.username, hp: s.p2.hp ?? 100, buffs: s.p2.buffs || [] } : base.p2,
+      };
+    } catch { return base; }
   });
 
   const [trivia, setTrivia] = useState(null);
@@ -54,7 +71,8 @@ function GameContent() {
     setGameState(prev => ({
       ...prev,
       p1: { ...prev.p1, id: state.p1.id, username: state.p1.username, hp: state.p1.hp, buffs: state.p1.buffs || [] },
-      p2: state.p2 ? { ...prev.p2, id: state.p2.id, username: state.p2.username, hp: state.p2.hp, buffs: state.p2.buffs || [] } : prev.p2,
+      // Jangan spread prev.p2 — gunakan data bersih dari server agar HP tidak stale
+      p2: state.p2 ? { id: state.p2.id, username: state.p2.username, hp: state.p2.hp, buffs: state.p2.buffs || [] } : prev.p2,
     }));
   }
 
@@ -81,7 +99,10 @@ function GameContent() {
 
     // Backup: jika state belum ada, set dari event
     socket.on("game:player_joined", ({ state }) => {
+      // Hanya tentukan isP1 jika belum diketahui (P1 yang menunggu di waiting page
+      // sudah punya isP1=true dari gsParam, jangan di-override)
       if (isP1Ref.current === null) determineAndSetIsP1(state, u.id);
+      // Tetap update HP dan data pemain terbaru
       applyStateUpdate(state);
     });
 
@@ -200,10 +221,12 @@ function GameContent() {
     socketRef.current?.emit("game:trivia_answer", { roomCode, answer });
   }
 
-  // Gunakan isP1Display untuk render
-  const isP1 = isP1Display === true;
-  const me = isP1 ? gameState.p1 : gameState.p2;
-  const opponent = isP1 ? gameState.p2 : gameState.p1;
+  // Tentukan me dan opponent langsung dari myId — tidak bergantung pada isP1Display
+  // Ini menghindari render terbalik saat isP1Display belum ter-set
+  const amIP1 = myId ? gameState.p1.id === myId : isP1Display === true;
+  const isP1 = amIP1;
+  const me = amIP1 ? gameState.p1 : gameState.p2;
+  const opponent = amIP1 ? gameState.p2 : gameState.p1;
 
   let myResult = null;
   if (roundResult) {
