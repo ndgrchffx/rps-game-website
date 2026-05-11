@@ -16,10 +16,6 @@ Game Rock Paper Scissors multiplayer realtime dengan sistem HP, Trivia, Ranked M
 - 🔔 **Web Push Notification** – Challenge dari leaderboard dikirim via push notif bahkan saat tab tertutup
 - 🖱️ **Drag & Drop Avatar** – Upload foto profil dengan drag & drop file
 
-### Mobile (React Native – repo terpisah)
-- 📷 **Camera Access** – Selfie untuk foto profil (expo-camera)
-- 🔔 **Push Notification** – Via Expo Notifications
-
 ## Mekanisme Game
 
 ### Alur Permainan
@@ -138,19 +134,3 @@ prisma/
                                          │
                                    [Web Push (VAPID)]
 ```
-
-## Pembagian Tugas Tim
-
-| Anggota | Peran |
-|---------|-------|
-| Anggota 1 | Backend: server.js, game engine, Socket.io events |
-| Anggota 2 | Frontend: UI/UX, halaman game, waiting, lobby |
-| Anggota 3 | Database: Prisma schema, API routes, auth |
-| Anggota 4 | Mobile: React Native app, kamera, push notif mobile |
-
-## Deliverables
-
-- [x] Code Repository (GitHub)
-- [x] Dokumen Teknis (README ini)
-- [ ] Video Demonstrasi (5-10 menit)
-- [ ] Presentasi UAS
