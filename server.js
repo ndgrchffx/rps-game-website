@@ -80,9 +80,10 @@ async function fetchTrivia() {
 
 function calcDamage(attackerBuffs = [], defenderBuffs = []) {
   let base = 20;
-  if (attackerBuffs.includes("double_damage")) base = 40;
-  if (defenderBuffs.includes("half_damage")) base = Math.floor(base / 2);
-  return base;
+  let multiplier = 1;
+  if (attackerBuffs.includes("double_damage")) multiplier *= 2;
+  if (defenderBuffs.includes("half_damage")) multiplier *= 0.5;
+  return Math.floor(base * multiplier);
 }
 
 function resolveRound(move1, move2) {
@@ -305,9 +306,15 @@ app.prepare().then(() => {
       socket.emit("game:trivia_self_answered", { correct, answer, correctAnswer: state.triviaData.correct });
 
       const effect = correct ? pickRandom(BUFFS) : pickRandom(DEBUFFS);
-      if (effect.id === "heal") player.hp = Math.min(100, player.hp + 15);
-      if (effect.id === "hp_drain") player.hp = Math.max(0, player.hp - 10);
-      player.buffs.push(effect.id);
+      if (effect.id === "heal") {
+        player.hp = Math.min(100, player.hp + 15);
+        // heal langsung diterapkan ke HP, tidak perlu masuk array buffs
+      } else if (effect.id === "hp_drain") {
+        player.hp = Math.max(0, player.hp - 10);
+        // hp_drain langsung diterapkan ke HP, tidak perlu masuk array buffs
+      } else {
+        player.buffs.push(effect.id);
+      }
 
       socket.emit("game:effect_received", { effect, hp: player.hp });
 
@@ -564,8 +571,14 @@ app.prepare().then(() => {
       // Auto-resolve trivia setelah 17 detik
       setTimeout(async () => {
         if (state.phase !== "trivia") return;
-        if (p1.triviaAnswer === null) p1.triviaAnswer = "TIMEOUT";
-        if (p2.triviaAnswer === null) p2.triviaAnswer = "TIMEOUT";
+        if (p1.triviaAnswer === null) {
+          p1.triviaAnswer = "TIMEOUT";
+          p1.hp = Math.max(0, p1.hp - 10); // apply hp_drain untuk yang tidak menjawab
+        }
+        if (p2.triviaAnswer === null) {
+          p2.triviaAnswer = "TIMEOUT";
+          p2.hp = Math.max(0, p2.hp - 10); // apply hp_drain untuk yang tidak menjawab
+        }
         io.to(roomCode).emit("game:trivia_resolved", {
           p1: { correct: false, effect: "hp_drain" },
           p2: { correct: false, effect: "hp_drain" },
