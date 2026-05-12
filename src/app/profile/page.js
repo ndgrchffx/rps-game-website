@@ -237,7 +237,7 @@ export default function ProfilePage() {
         </div>
 
         {/* Web Push Toggle — Platform-specific Web feature */}
-        {"serviceWorker" in (typeof navigator !== "undefined" ? navigator : {}) && (
+        {typeof window !== "undefined" && "serviceWorker" in navigator && (
           <div style={{ background:"#fff", borderRadius:"20px", padding:"20px 24px", boxShadow:"0 2px 16px rgba(0,0,0,0.05)", marginBottom:"16px" }}>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
               <div>

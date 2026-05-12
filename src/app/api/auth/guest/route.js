@@ -1,45 +1,43 @@
 import { NextResponse } from "next/server";
-import jwt from "jsonwebtoken";
+import prisma from "@/lib/prisma";
+import { generateToken } from "@/lib/jwt";
 
-const JWT_SECRET = process.env.JWT_SECRET || "janken_secret_2024";
+function randomUsername() {
+  const adj = ["Brave","Swift","Bold","Wild","Calm","Cool","Fierce","Sharp"];
+  const noun = ["Panda","Dragon","Tiger","Eagle","Wolf","Fox","Bear","Lion"];
+  const num = Math.floor(Math.random() * 9000) + 1000;
+  return `${adj[Math.floor(Math.random()*adj.length)]}${noun[Math.floor(Math.random()*noun.length)]}${num}`;
+}
 
-export async function POST(req) {
+export async function POST() {
   try {
-    const { username } = await req.json();
+    let username, attempts = 0;
+    do {
+      username = randomUsername();
+      attempts++;
+    } while (attempts < 10 && await prisma.user.findUnique({ where: { username } }));
 
-    if (!username || username.trim().length < 2) {
-      return NextResponse.json(
-        { error: "Nama minimal 2 karakter." },
-        { status: 400 },
-      );
-    }
+    const email = `guest_${Date.now()}@janken.local`;
+    const user = await prisma.user.create({
+      data: { username, email, password: "" },
+    });
 
-    const trimmed = username.trim().slice(0, 20);
-    const guestId = "guest_" + Math.random().toString(36).substring(2, 12);
+    const token = generateToken({ id: user.id, username: user.username, email: user.email });
 
-    const user = {
-      id: guestId,
-      username: trimmed,
-      email: null,
-      avatar: null,
-      isGuest: true,
-      rankedPoints: 0,
-      wins: 0,
-      losses: 0,
-    };
-
-    const token = jwt.sign(
-      { id: guestId, username: trimmed, isGuest: true },
-      JWT_SECRET,
-      { expiresIn: "12h" },
-    );
-
-    return NextResponse.json({ token, user });
+    return NextResponse.json({
+      token,
+      user: {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        avatar: null,
+        rankedPoints: user.rankedPoints,
+        wins: user.wins,
+        losses: user.losses,
+      },
+    }, { status: 201 });
   } catch (e) {
-    console.error("[GUEST AUTH ERROR]", e);
-    return NextResponse.json(
-      { error: "Gagal membuat akun tamu." },
-      { status: 500 },
-    );
+    console.error("[GUEST ERROR]:", e);
+    return NextResponse.json({ error: "Server error." }, { status: 500 });
   }
 }

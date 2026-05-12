@@ -5,71 +5,152 @@ import { saveAuth } from "@/lib/auth";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [mode, setMode] = useState("login");
+  const [tab, setTab] = useState("login");
   const [form, setForm] = useState({ username: "", email: "", password: "" });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  async function handleSubmit(e) {
-    e.preventDefault();
-    setError(""); setLoading(true);
-    try {
-      const url = mode === "login" ? "/api/auth/login" : "/api/auth/register";
-      const body = mode === "login" ? { email: form.email, password: form.password } : form;
-      const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-      const data = await res.json();
-      if (!res.ok) { setError(data.error || "Terjadi kesalahan."); setLoading(false); return; }
-      if (mode === "register") { setMode("login"); setError(""); setForm({ ...form, password: "" }); setLoading(false); return; }
-      saveAuth(data.token, data.user);
-      router.push("/lobby");
-    } catch { setError("Gagal terhubung ke server."); setLoading(false); }
+  function handleChange(e) {
+    setForm(prev => ({ ...prev, [e.target.name]: e.target.value }));
+    setError("");
   }
 
-  const inp = { width:"100%", padding:"12px 16px", borderRadius:"12px", border:"1.5px solid #e0d8d8", fontSize:"15px", outline:"none", background:"#fff" };
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+    try {
+      const url = tab === "login" ? "/api/auth/login" : "/api/auth/register";
+      const body = tab === "login"
+        ? { email: form.email, password: form.password }
+        : { username: form.username, email: form.email, password: form.password };
+
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error || "Terjadi kesalahan.");
+        return;
+      }
+
+      saveAuth(data.token, data.user);
+      router.push("/lobby");
+    } catch {
+      setError("Tidak dapat terhubung ke server.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleGuest() {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch("/api/auth/guest", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error || "Gagal masuk sebagai tamu."); return; }
+      saveAuth(data.token, data.user);
+      router.push("/lobby");
+    } catch {
+      setError("Tidak dapat terhubung ke server.");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
-    <main style={{ minHeight:"100vh", background:"#FDF0EE", display:"flex", alignItems:"center", justifyContent:"center", padding:"20px" }}>
-      <div style={{ width:"100%", maxWidth:"400px", animation:"fadeIn 0.4s ease" }}>
+    <main style={{ minHeight: "100vh", background: "#FDF0EE", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px" }}>
+      <div style={{ width: "100%", maxWidth: "380px" }}>
         {/* Logo */}
-        <div style={{ textAlign:"center", marginBottom:"36px" }}>
-          <div style={{ fontSize:"48px", marginBottom:"8px" }}>✊🖐️✌️</div>
-          <h1 style={{ fontSize:"32px", fontWeight:"900", color:"#8B2635", letterSpacing:"-1px" }}>JANKEN</h1>
-          <p style={{ color:"#888", fontSize:"14px", marginTop:"4px" }}>Rock Paper Scissors Battle Arena</p>
+        <div style={{ textAlign: "center", marginBottom: "32px" }}>
+          <div style={{ fontSize: "48px", marginBottom: "8px" }}>✊🖐️✌️</div>
+          <h1 style={{ fontSize: "32px", fontWeight: "900", color: "#8B2635", margin: 0 }}>JANKEN</h1>
+          <p style={{ color: "#888", fontSize: "14px", marginTop: "4px" }}>RPS Battle Arena</p>
         </div>
 
-        {/* Card */}
-        <div style={{ background:"#fff", borderRadius:"24px", padding:"32px", boxShadow:"0 4px 32px rgba(0,0,0,0.08)" }}>
-          {/* Tabs */}
-          <div style={{ display:"flex", background:"#f5eded", borderRadius:"12px", padding:"4px", marginBottom:"24px" }}>
-            {["login","register"].map(m => (
-              <button key={m} onClick={() => { setMode(m); setError(""); }}
-                style={{ flex:1, padding:"10px", borderRadius:"10px", border:"none", fontSize:"14px", fontWeight:"700",
-                  background: mode===m ? "#8B2635" : "transparent", color: mode===m ? "#fff" : "#888", transition:"all 0.2s" }}>
-                {m === "login" ? "Masuk" : "Daftar"}
-              </button>
-            ))}
+        {/* Tab */}
+        <div style={{ display: "flex", background: "#f0e8e8", borderRadius: "12px", padding: "4px", marginBottom: "24px" }}>
+          {["login","register"].map(t => (
+            <button key={t} onClick={() => { setTab(t); setError(""); }}
+              style={{ flex: 1, padding: "10px", borderRadius: "10px", border: "none", fontWeight: "700", fontSize: "13px", cursor: "pointer", background: tab === t ? "#8B2635" : "transparent", color: tab === t ? "#fff" : "#888", transition: "all 0.2s" }}>
+              {t === "login" ? "Masuk" : "Daftar"}
+            </button>
+          ))}
+        </div>
+
+        {/* Form */}
+        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+          {tab === "register" && (
+            <div>
+              <label style={{ fontSize: "12px", fontWeight: "700", color: "#888", letterSpacing: "1px" }}>USERNAME</label>
+              <input
+                name="username" value={form.username} onChange={handleChange}
+                placeholder="min. 3 karakter, huruf/angka/_"
+                style={inputStyle}
+                required minLength={3} maxLength={20}
+              />
+            </div>
+          )}
+          <div>
+            <label style={{ fontSize: "12px", fontWeight: "700", color: "#888", letterSpacing: "1px" }}>EMAIL</label>
+            <input
+              name="email" type="email" value={form.email} onChange={handleChange}
+              placeholder="email@kamu.com"
+              style={inputStyle}
+              required
+            />
+          </div>
+          <div>
+            <label style={{ fontSize: "12px", fontWeight: "700", color: "#888", letterSpacing: "1px" }}>PASSWORD</label>
+            <input
+              name="password" type="password" value={form.password} onChange={handleChange}
+              placeholder="min. 6 karakter"
+              style={inputStyle}
+              required minLength={6}
+            />
           </div>
 
-          <form onSubmit={handleSubmit} style={{ display:"flex", flexDirection:"column", gap:"14px" }}>
-            {mode === "register" && (
-              <input style={inp} placeholder="Username" value={form.username}
-                onChange={e => setForm({...form, username: e.target.value})} required minLength={3} />
-            )}
-            <input style={inp} type="email" placeholder="Email" value={form.email}
-              onChange={e => setForm({...form, email: e.target.value})} required />
-            <input style={inp} type="password" placeholder="Password" value={form.password}
-              onChange={e => setForm({...form, password: e.target.value})} required minLength={6} />
+          {error && (
+            <div style={{ background: "#fde8e8", border: "1px solid #E24B4A", borderRadius: "10px", padding: "10px 14px", fontSize: "13px", color: "#8B2635", fontWeight: "600" }}>
+              ⚠️ {error}
+            </div>
+          )}
 
-            {error && <div style={{ background:"#fde8e8", color:"#8B2635", padding:"10px 14px", borderRadius:"10px", fontSize:"13px", fontWeight:"600" }}>{error}</div>}
+          <button type="submit" disabled={loading}
+            style={{ marginTop: "4px", padding: "14px", borderRadius: "12px", border: "none", background: loading ? "#ccc" : "#8B2635", color: "#fff", fontWeight: "800", fontSize: "15px", cursor: loading ? "not-allowed" : "pointer", transition: "all 0.2s" }}>
+            {loading ? "⏳ Memproses..." : tab === "login" ? "MASUK →" : "DAFTAR →"}
+          </button>
+        </form>
 
-            <button type="submit" disabled={loading}
-              style={{ background:"#8B2635", color:"#fff", border:"none", padding:"14px", borderRadius:"12px",
-                fontSize:"15px", fontWeight:"800", letterSpacing:"1px", opacity: loading ? 0.7 : 1, transition:"opacity 0.2s" }}>
-              {loading ? "⏳ Loading..." : mode === "login" ? "MASUK" : "DAFTAR"}
-            </button>
-          </form>
+        {/* Divider */}
+        <div style={{ display: "flex", alignItems: "center", gap: "12px", margin: "20px 0" }}>
+          <div style={{ flex: 1, height: "1px", background: "#e0d0d0" }} />
+          <span style={{ fontSize: "12px", color: "#aaa", fontWeight: "600" }}>atau</span>
+          <div style={{ flex: 1, height: "1px", background: "#e0d0d0" }} />
         </div>
+
+        {/* Guest */}
+        <button onClick={handleGuest} disabled={loading}
+          style={{ width: "100%", padding: "13px", borderRadius: "12px", border: "2px solid #e0d0d0", background: "#fff", color: "#888", fontWeight: "700", fontSize: "14px", cursor: loading ? "not-allowed" : "pointer" }}>
+          👤 Main sebagai Tamu
+        </button>
+
+        <p style={{ textAlign: "center", fontSize: "11px", color: "#bbb", marginTop: "20px" }}>
+          Tamu tidak bisa login ulang — data akan hilang
+        </p>
       </div>
     </main>
   );
 }
+
+const inputStyle = {
+  display: "block", width: "100%", marginTop: "6px",
+  padding: "12px 14px", borderRadius: "10px",
+  border: "1.5px solid #e0d0d0", fontSize: "14px",
+  outline: "none", background: "#fff",
+  boxSizing: "border-box",
+};

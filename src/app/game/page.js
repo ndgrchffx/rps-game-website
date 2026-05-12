@@ -12,20 +12,12 @@ function GameContent() {
   const router = useRouter();
   const params = useSearchParams();
   const roomCode = params.get("room");
-  const gsParam = params.get("gs"); // game state awal dari URL
+  const gsParam = params.get("gs");
 
   const [user, setUser] = useState(null);
-  const [myId, setMyId] = useState(() => {
-    try {
-      // Ambil dari localStorage/auth langsung supaya tersedia sebelum useEffect
-      const raw = typeof window !== "undefined" ? localStorage.getItem("user") : null;
-      return raw ? JSON.parse(raw).id : null;
-    } catch { return null; }
-  });
-
-  // isP1 disimpan di ref supaya tidak stale di closures
+  const myIdRef = useRef(null);
   const isP1Ref = useRef(null);
-  const [isP1Display, setIsP1Display] = useState(null); // untuk render
+  const [isP1Display, setIsP1Display] = useState(null);
 
   const [gameState, setGameState] = useState(() => {
     const base = {
@@ -58,21 +50,20 @@ function GameContent() {
   const socketRef = useRef(null);
   const timerRef = useRef(null);
 
-  // Set isP1 berdasarkan state dan userId
   function determineAndSetIsP1(state, uid) {
     if (!uid || !state?.p1?.id) return;
     const ip1 = state.p1.id === uid;
     isP1Ref.current = ip1;
     setIsP1Display(ip1);
-    console.log(`[GAME] isP1=${ip1}, myId=${uid}, p1.id=${state.p1.id}, p2.id=${state.p2?.id}`);
   }
 
   function applyStateUpdate(state) {
     setGameState(prev => ({
       ...prev,
-      p1: { ...prev.p1, id: state.p1.id, username: state.p1.username, hp: state.p1.hp, buffs: state.p1.buffs || [] },
-      // Jangan spread prev.p2 — gunakan data bersih dari server agar HP tidak stale
-      p2: state.p2 ? { id: state.p2.id, username: state.p2.username, hp: state.p2.hp, buffs: state.p2.buffs || [] } : prev.p2,
+      p1: { id: state.p1.id, username: state.p1.username, hp: state.p1.hp, buffs: state.p1.buffs || [] },
+      p2: state.p2
+        ? { id: state.p2.id, username: state.p2.username, hp: state.p2.hp, buffs: state.p2.buffs || [] }
+        : prev.p2,
     }));
   }
 
@@ -80,15 +71,13 @@ function GameContent() {
     const u = getUser();
     if (!u) { router.push("/login"); return; }
     setUser(u);
-    setMyId(u.id);
+    myIdRef.current = u.id;
 
-    // ── Inisialisasi dari URL parameter (paling reliable) ──
     if (gsParam) {
       try {
-        const state = JSON.parse(atob(gsParam));
-        console.log("[GAME] State dari URL:", state);
-        determineAndSetIsP1(state, u.id);
-        applyStateUpdate(state);
+        const s = JSON.parse(atob(gsParam));
+        determineAndSetIsP1(s, u.id);
+        applyStateUpdate(s);
       } catch (e) {
         console.error("[GAME] Gagal parse state dari URL:", e);
       }
@@ -97,54 +86,66 @@ function GameContent() {
     const socket = connectSocket();
     socketRef.current = socket;
 
-    // Backup: jika state belum ada, set dari event
     socket.on("game:player_joined", ({ state }) => {
-      // Hanya tentukan isP1 jika belum diketahui (P1 yang menunggu di waiting page
-      // sudah punya isP1=true dari gsParam, jangan di-override)
-      if (isP1Ref.current === null) determineAndSetIsP1(state, u.id);
-      // Tetap update HP dan data pemain terbaru
+      if (isP1Ref.current === null) determineAndSetIsP1(state, myIdRef.current);
       applyStateUpdate(state);
     });
 
     socket.on("game:joined", ({ state }) => {
-      if (state && isP1Ref.current === null) determineAndSetIsP1(state, u.id);
-      if (state) applyStateUpdate(state);
+      if (isP1Ref.current === null) determineAndSetIsP1(state, myIdRef.current);
+      applyStateUpdate(state);
     });
 
     socket.on("game:ranked_match_found", ({ state }) => {
-      if (isP1Ref.current === null) determineAndSetIsP1(state, u.id);
+      if (isP1Ref.current === null) determineAndSetIsP1(state, myIdRef.current);
       applyStateUpdate(state);
     });
 
     socket.on("game:challenge_accepted", ({ state }) => {
-      if (isP1Ref.current === null) determineAndSetIsP1(state, u.id);
+      if (isP1Ref.current === null) determineAndSetIsP1(state, myIdRef.current);
       applyStateUpdate(state);
     });
 
-    socket.on("game:round_start", ({ round, timer, p1HP, p2HP, p1Buffs, p2Buffs }) => {
+    // FIX: Handle reconnect — server kirim state terkini
+    socket.on("game:reconnected", ({ state }) => {
+      determineAndSetIsP1(state, myIdRef.current);
+      applyStateUpdate(state);
+    });
+
+    socket.on("game:round_start", ({ round, timer, p1HP, p2HP, p1Buffs, p2Buffs, lockedMove }) => {
       setSpyHint(null);
       setOpponentExposed(null);
       setRoundResult(null);
       setTrivia(null);
+
       setGameState(prev => ({
         ...prev,
-        phase: "picking", round, timer,
-        myMove: null, opponentPicked: false, lockedMove: null,
+        phase: "picking",
+        round, timer,
+        myMove: lockedMove ? lockedMove : null, // FIX: set myMove jika locked
+        opponentPicked: false,
+        lockedMove: lockedMove || null,
         p1: { ...prev.p1, hp: p1HP, buffs: p1Buffs || [] },
         p2: { ...prev.p2, hp: p2HP, buffs: p2Buffs || [] },
       }));
+
       let t = timer;
       if (timerRef.current) clearInterval(timerRef.current);
       timerRef.current = setInterval(() => {
         t--;
-        setGameState(prev => ({ ...prev, timer: t }));
+        setGameState(prev => ({ ...prev, timer: Math.max(0, t) }));
         if (t <= 0) clearInterval(timerRef.current);
       }, 1000);
     });
 
     socket.on("game:spy_reveal", ({ notPickedMove }) => setSpyHint(notPickedMove));
     socket.on("game:opponent_exposed", ({ move }) => setOpponentExposed(move));
-    socket.on("game:move_locked", ({ lockedMove }) => setGameState(prev => ({ ...prev, lockedMove })));
+
+    // FIX: lockedMove sudah dikirim via game:round_start, tapi tetap handle event ini juga
+    socket.on("game:move_locked", ({ lockedMove }) => {
+      setGameState(prev => ({ ...prev, lockedMove, myMove: lockedMove }));
+    });
+
     socket.on("game:opponent_picked", () => setGameState(prev => ({ ...prev, opponentPicked: true })));
 
     socket.on("game:round_result", (data) => {
@@ -161,10 +162,11 @@ function GameContent() {
       setGameState(prev => ({ ...prev, phase: "trivia" }));
       setTrivia({ ...data, myAnswer: null, triviaTimer: data.timeLimit });
       let t = data.timeLimit;
-      const interval = setInterval(() => {
+      if (timerRef.current) clearInterval(timerRef.current);
+      timerRef.current = setInterval(() => {
         t--;
-        setTrivia(prev => prev ? { ...prev, triviaTimer: t } : prev);
-        if (t <= 0) clearInterval(interval);
+        setTrivia(prev => prev ? { ...prev, triviaTimer: Math.max(0, t) } : prev);
+        if (t <= 0) clearInterval(timerRef.current);
       }, 1000);
     });
 
@@ -172,10 +174,26 @@ function GameContent() {
       setTrivia(prev => prev ? { ...prev, answered: true, correct, correctAnswer } : prev);
     });
 
-    socket.on("game:effect_received", ({ effect }) => showEffect(effect));
+    socket.on("game:effect_received", ({ effect, hp, hpChange }) => {
+      showEffect(effect);
+      // FIX: Update HP langsung saat efek instant (heal/hp_drain) diterima
+      if (effect.id === "heal" || effect.id === "hp_drain") {
+        const uid = myIdRef.current;
+        setGameState(prev => {
+          const isMyP1 = prev.p1.id === uid;
+          return {
+            ...prev,
+            p1: isMyP1 ? { ...prev.p1, hp } : prev.p1,
+            p2: !isMyP1 ? { ...prev.p2, hp } : prev.p2,
+          };
+        });
+      }
+    });
 
     socket.on("game:trivia_resolved", (data) => {
+      clearInterval(timerRef.current);
       setTrivia(prev => prev ? { ...prev, resolved: true } : prev);
+      // FIX: Update HP kedua player dari data server (paling akurat)
       setGameState(prev => ({
         ...prev, phase: "reveal",
         p1: { ...prev.p1, hp: data.p1HP },
@@ -189,28 +207,31 @@ function GameContent() {
       setGameOver(data);
     });
 
-    socket.on("game:player_disconnected", ({ username }) => {
-      showEffect({ id:"disconnect", name:`❌ ${username} keluar`, type:"debuff" });
+    socket.on("game:player_disconnected", ({ username: uname }) => {
+      showEffect({ id:"disconnect", name:`❌ ${uname} keluar`, type:"debuff" });
     });
 
     return () => {
       clearInterval(timerRef.current);
-      ["game:player_joined","game:joined","game:challenge_accepted","game:ranked_match_found",
-       "game:round_start","game:move_locked","game:opponent_picked","game:round_result",
-       "game:trivia_start","game:trivia_self_answered","game:effect_received","game:trivia_resolved",
-       "game:over","game:player_disconnected","game:spy_reveal","game:opponent_exposed"
+      [
+        "game:player_joined","game:joined","game:challenge_accepted","game:ranked_match_found",
+        "game:reconnected","game:round_start","game:move_locked","game:opponent_picked",
+        "game:round_result","game:trivia_start","game:trivia_self_answered","game:effect_received",
+        "game:trivia_resolved","game:over","game:player_disconnected","game:spy_reveal","game:opponent_exposed",
       ].forEach(ev => socket.off(ev));
     };
   }, [roomCode, gsParam]);
 
   function showEffect(effect) {
-    const id = Date.now();
+    const id = Date.now() + Math.random();
     setEffects(prev => [...prev, { ...effect, id }]);
     setTimeout(() => setEffects(prev => prev.filter(e => e.id !== id)), 3000);
   }
 
   function sendMove(move) {
-    if (gameState.phase !== "picking" || gameState.myMove || gameState.lockedMove) return;
+    // FIX: Jika move sudah dipilih (termasuk lockedMove), jangan kirim lagi
+    if (gameState.phase !== "picking") return;
+    if (gameState.myMove) return; // Sudah pilih
     setGameState(prev => ({ ...prev, myMove: move }));
     socketRef.current?.emit("game:move", { roomCode, move });
   }
@@ -221,9 +242,8 @@ function GameContent() {
     socketRef.current?.emit("game:trivia_answer", { roomCode, answer });
   }
 
-  // Tentukan me dan opponent langsung dari myId — tidak bergantung pada isP1Display
-  // Ini menghindari render terbalik saat isP1Display belum ter-set
-  const amIP1 = myId ? gameState.p1.id === myId : isP1Display === true;
+  const uid = myIdRef.current || user?.id;
+  const amIP1 = uid ? gameState.p1.id === uid : isP1Display === true;
   const isP1 = amIP1;
   const me = amIP1 ? gameState.p1 : gameState.p2;
   const opponent = amIP1 ? gameState.p2 : gameState.p1;
@@ -241,7 +261,7 @@ function GameContent() {
     return (
       <main style={{ minHeight:"100vh", background:"#FDF0EE", display:"flex", alignItems:"center", justifyContent:"center" }}>
         <div style={{ textAlign:"center" }}>
-          <div style={{ fontSize:"48px", marginBottom:"16px", animation:"pulse 2s infinite" }}>⏳</div>
+          <div style={{ fontSize:"48px", marginBottom:"16px" }}>⏳</div>
           <p style={{ color:"#8B2635", fontSize:"18px", fontWeight:"700" }}>Menunggu permainan dimulai...</p>
           <p style={{ color:"#888", marginTop:"8px", fontSize:"14px" }}>Room: {roomCode}</p>
         </div>
@@ -251,17 +271,24 @@ function GameContent() {
 
   return (
     <main style={{ minHeight:"100vh", background:"#FDF0EE", fontFamily:"inherit", paddingBottom:"20px", position:"relative" }}>
-      {/* Screen Effects */}
+      {/* Effect Toasts */}
       <div style={{ position:"fixed", top:"80px", right:"16px", zIndex:50, display:"flex", flexDirection:"column", gap:"8px" }}>
         {effects.map(eff => (
-          <div key={eff.id} style={{ background: eff.type==="buff"?"#e8f5e9":"#fde8e8", border:`2px solid ${eff.type==="buff"?"#4CAF7D":"#E24B4A"}`, borderRadius:"12px", padding:"10px 16px", fontSize:"13px", fontWeight:"700", color: eff.type==="buff"?"#2e7d32":"#8B2635", animation:"fadeIn 0.3s ease", maxWidth:"220px" }}>
+          <div key={eff.id} style={{
+            background: eff.type==="buff"?"#e8f5e9":"#fde8e8",
+            border:`2px solid ${eff.type==="buff"?"#4CAF7D":"#E24B4A"}`,
+            borderRadius:"12px", padding:"10px 16px",
+            fontSize:"13px", fontWeight:"700",
+            color: eff.type==="buff"?"#2e7d32":"#8B2635",
+            maxWidth:"220px",
+          }}>
             {eff.name}
           </div>
         ))}
       </div>
 
       {/* Navbar */}
-      <nav style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"16px 24px", borderBottom:"1px solid var(--border)" }}>
+      <nav style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"16px 24px", borderBottom:"1px solid #f0e8e8" }}>
         <div>
           <div style={{ fontWeight:"800", fontSize:"18px", color:"#8B2635" }}>JANKEN</div>
           <div style={{ fontSize:"11px", color:"#888", fontWeight:"600" }}>
@@ -324,7 +351,7 @@ function GameContent() {
                   ? MOVE_ICONS[isP1 ? roundResult?.p1Move : roundResult?.p2Move] || "?"
                   : gameState.myMove ? MOVE_ICONS[gameState.myMove] : "?"}
               </div>
-              {gameState.lockedMove && <div style={{ fontSize:"11px", color:"#E24B4A", fontWeight:"700", marginTop:"6px" }}>🔒 Terkunci</div>}
+              {gameState.lockedMove && <div style={{ fontSize:"11px", color:"#E24B4A", fontWeight:"700", marginTop:"6px" }}>🔒 Move Terkunci</div>}
             </div>
 
             <div style={{ width:"40px", height:"40px", borderRadius:"50%", background:"#8B2635", color:"#fff", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"12px", fontWeight:"800", flexShrink:0 }}>VS</div>
@@ -344,7 +371,7 @@ function GameContent() {
 
         {/* Round Result */}
         {gameState.phase === "reveal" && roundResult && (
-          <div style={{ textAlign:"center", marginBottom:"20px", animation:"fadeIn 0.3s ease" }}>
+          <div style={{ textAlign:"center", marginBottom:"20px" }}>
             <div style={{ fontSize:"28px", fontWeight:"900", color: myResult==="WIN"?"#4CAF7D":myResult==="LOSE"?"#E24B4A":"#888", marginBottom:"4px" }}>
               {myResult === "WIN" ? "🎉 MENANG!" : myResult === "LOSE" ? "💔 KALAH!" : "🤝 SERI!"}
             </div>
@@ -362,7 +389,9 @@ function GameContent() {
         {gameState.phase === "picking" && (
           <>
             <div style={{ textAlign:"center", marginBottom:"12px" }}>
-              <span style={{ fontSize:"12px", fontWeight:"700", color:"#888", letterSpacing:"2px" }}>PILIH SENJATAMU</span>
+              <span style={{ fontSize:"12px", fontWeight:"700", color:"#888", letterSpacing:"2px" }}>
+                {gameState.lockedMove ? "🔒 MOVE MU SUDAH DIKUNCI!" : "PILIH SENJATAMU"}
+              </span>
             </div>
             {spyHint && (
               <div style={{ textAlign:"center", marginBottom:"10px", padding:"10px 16px", background:"#e8f5e9", borderRadius:"12px", fontSize:"13px", fontWeight:"700", color:"#2e7d32" }}>
@@ -376,19 +405,32 @@ function GameContent() {
             )}
             <div style={{ display:"flex", gap:"12px" }}>
               {["ROCK","PAPER","SCISSORS"].map(m => {
-                const isLocked = gameState.lockedMove && gameState.lockedMove !== m;
-                const isSelected = gameState.myMove === m || gameState.lockedMove === m;
-                const isDisabled = !!gameState.myMove || !!gameState.lockedMove;
+                // FIX: Jika lockedMove aktif, tampilkan terkunci tanpa disable semua
+                const isThisLocked = gameState.lockedMove === m;
+                const isOtherLocked = gameState.lockedMove && gameState.lockedMove !== m;
+                const isSelected = gameState.myMove === m;
+                // FIX: Disable hanya jika sudah memilih (myMove ada), bukan karena lockedMove
+                const isDisabled = !!gameState.myMove;
                 return (
                   <button key={m}
-                    onClick={() => !isDisabled && !isLocked && sendMove(m)}
-                    disabled={isDisabled}
-                    style={{ flex:1, background:"#fff", border: isSelected?"2.5px solid #8B2635":"2px solid #f0e8e8", borderRadius:"20px", padding:"20px 8px", cursor: isDisabled?"not-allowed":"pointer", textAlign:"center", boxShadow: isSelected?"0 4px 20px rgba(139,38,53,0.15)":"0 2px 12px rgba(0,0,0,0.05)", opacity: isLocked?0.3:1, transition:"all 0.15s" }}>
+                    onClick={() => !isDisabled && !isOtherLocked && sendMove(m)}
+                    style={{
+                      flex:1,
+                      background: isThisLocked ? "#fde8e8" : isSelected ? "#fff8f8" : "#fff",
+                      border: isThisLocked ? "2.5px solid #E24B4A" : isSelected ? "2.5px solid #8B2635" : "2px solid #f0e8e8",
+                      borderRadius:"20px",
+                      padding:"20px 8px",
+                      cursor: isOtherLocked || isDisabled ? "not-allowed" : "pointer",
+                      textAlign:"center",
+                      boxShadow: isSelected || isThisLocked ? "0 4px 20px rgba(139,38,53,0.15)" : "0 2px 12px rgba(0,0,0,0.05)",
+                      opacity: isOtherLocked ? 0.3 : 1,
+                      transition:"all 0.15s",
+                    }}>
                     <div style={{ fontSize:"28px", marginBottom:"8px" }}>{MOVE_EMOJI[m]}</div>
-                    <div style={{ fontSize:"12px", fontWeight:"800", color: isSelected?"#8B2635":"#1a1a1a", letterSpacing:"0.5px" }}>
+                    <div style={{ fontSize:"12px", fontWeight:"800", color: isThisLocked ? "#E24B4A" : isSelected ? "#8B2635" : "#1a1a1a", letterSpacing:"0.5px" }}>
                       {m === "ROCK" ? "BATU" : m === "PAPER" ? "KERTAS" : "GUNTING"}
                     </div>
-                    {isLocked && <div style={{ fontSize:"10px", color:"#E24B4A" }}>🔒</div>}
+                    {isThisLocked && <div style={{ fontSize:"10px", color:"#E24B4A", marginTop:"4px" }}>🔒 Terkunci</div>}
                   </button>
                 );
               })}
@@ -398,7 +440,7 @@ function GameContent() {
 
         {/* TRIVIA */}
         {gameState.phase === "trivia" && trivia && (
-          <div style={{ background:"#fff", borderRadius:"20px", padding:"24px", boxShadow:"0 4px 20px rgba(0,0,0,0.08)", animation:"fadeIn 0.4s ease" }}>
+          <div style={{ background:"#fff", borderRadius:"20px", padding:"24px", boxShadow:"0 4px 20px rgba(0,0,0,0.08)" }}>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"16px" }}>
               <div style={{ background:"#8B2635", color:"#fff", borderRadius:"20px", padding:"4px 14px", fontSize:"12px", fontWeight:"700" }}>🎯 TRIVIA TIME!</div>
               <div style={{ fontSize:"20px", fontWeight:"900", color: (trivia.triviaTimer||0)<=5?"#E24B4A":"#8B2635" }}>{trivia.triviaTimer || 0}s</div>
@@ -433,12 +475,12 @@ function GameContent() {
 
         {/* GAME OVER */}
         {gameState.phase === "gameover" && gameOver && (
-          <div style={{ textAlign:"center", animation:"fadeIn 0.5s ease" }}>
+          <div style={{ textAlign:"center" }}>
             <div style={{ fontSize:"64px", marginBottom:"16px" }}>
-              {gameOver.winnerId === myId ? "🏆" : "💀"}
+              {gameOver.winnerId === uid ? "🏆" : "💀"}
             </div>
-            <h2 style={{ fontSize:"32px", fontWeight:"900", color: gameOver.winnerId===myId?"#4CAF7D":"#8B2635", marginBottom:"8px" }}>
-              {gameOver.winnerId === myId ? "MENANG!" : "KALAH!"}
+            <h2 style={{ fontSize:"32px", fontWeight:"900", color: gameOver.winnerId===uid?"#4CAF7D":"#8B2635", marginBottom:"8px" }}>
+              {gameOver.winnerId === uid ? "MENANG!" : "KALAH!"}
             </h2>
             <p style={{ color:"#888", fontSize:"14px", marginBottom:"24px" }}>
               Pemenang: <b>{gameOver.winnerName}</b> • Total {gameOver.totalRounds} ronde
@@ -446,8 +488,8 @@ function GameContent() {
             {(gameOver.p1Delta !== 0 || gameOver.p2Delta !== 0) && (
               <div style={{ background:"#fff", borderRadius:"16px", padding:"16px", marginBottom:"24px", boxShadow:"0 2px 12px rgba(0,0,0,0.06)" }}>
                 <p style={{ fontSize:"12px", color:"#888", fontWeight:"700", marginBottom:"8px" }}>PERUBAHAN POIN RANKED</p>
-                <p style={{ fontSize:"22px", fontWeight:"900", color: gameOver.winnerId===myId?"#4CAF7D":"#E24B4A" }}>
-                  {gameOver.winnerId === myId ? "+" : ""}{isP1 ? gameOver.p1Delta : gameOver.p2Delta} PTS
+                <p style={{ fontSize:"22px", fontWeight:"900", color: gameOver.winnerId===uid?"#4CAF7D":"#E24B4A" }}>
+                  {gameOver.winnerId === uid ? "+" : ""}{isP1 ? gameOver.p1Delta : gameOver.p2Delta} PTS
                 </p>
               </div>
             )}
